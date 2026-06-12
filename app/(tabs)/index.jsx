@@ -4,7 +4,7 @@ import {
   StyleSheet, Platform, StatusBar, ActivityIndicator,
   Alert, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -116,6 +116,14 @@ const SOUS_CATEGORIES = {
   autre: [],
 };
 
+const QUICK_CATS = [
+  { key: 'meubles',        label: 'Déménagement',     icon: 'grid-outline' },
+  { key: 'electromenager', label: 'Électroménager',   icon: 'tv-outline' },
+  { key: 'alimentation',   label: 'Fruits & Légumes', icon: 'basket-outline' },
+  { key: 'materiaux',      label: 'Matériaux',        icon: 'construct-outline' },
+  { key: 'cartons',        label: 'Cartons',           icon: 'cube-outline' },
+];
+
 const VEH_LABELS = {
   herbine:    'Herbine',
   utilitaire: 'Utilitaire léger',
@@ -152,7 +160,7 @@ const ls = StyleSheet.create({
 // ════════════════════════════════════════════════════════════
 function ExpéditeurHome({ user }) {
   const router = useRouter();
-  const { setField } = useReservation();
+  const { setField, reset, setOption } = useReservation();
 
   const [mode, setMode]           = useState('instantane');
   const [depart, setDepart]       = useState('');
@@ -176,6 +184,13 @@ function ExpéditeurHome({ user }) {
 
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsKey, setGpsKey]         = useState(0);
+  const [recentDemandes, setRecentDemandes] = useState([]);
+
+  useFocusEffect(useCallback(() => {
+    try {
+      setRecentDemandes(demandesDB.getByExpediteur(user.id).slice(0, 3));
+    } catch {}
+  }, [user.id]));
 
   const detectPosition = async () => {
     setGpsLoading(true);
@@ -226,6 +241,26 @@ function ExpéditeurHome({ user }) {
     router.push('/reservation/depart-arrivee');
   };
 
+  const refaire = (d) => {
+    reset();
+    setField('departure',  d.ville_depart);
+    setField('arrival',    d.ville_arrivee);
+    setField('category',   d.type_marchandise);
+    setField('mode',       d.type_demande || 'planifie');
+    if (d.poids)       setField('quantite',    d.poids);
+    if (d.description) setField('description', d.description);
+    if (d.options_supplementaires) {
+      try {
+        const o = JSON.parse(d.options_supplementaires);
+        if (o.etages)  setOption('etages',  o.etages);
+        if (o.aide)    setOption('aide',    o.aide);
+        if (o.fragile) setOption('fragile', o.fragile);
+        if (o.express) setOption('express', o.express);
+      } catch {}
+    }
+    router.push('/reservation/recapitulatif');
+  };
+
   const fmtDateLabel = (d) => d
     ? d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
     : null;
@@ -245,6 +280,69 @@ function ExpéditeurHome({ user }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
       >
+        {/* Section 1 — Transport rapide */}
+        <View style={qs.section}>
+          <Text style={qs.sectionTitle}>Transport rapide</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled keyboardShouldPersistTaps="handled"
+            contentContainerStyle={qs.row}>
+            {QUICK_CATS.map(cat => (
+              <TouchableOpacity
+                key={cat.key}
+                style={qs.card}
+                onPress={() => {
+                  reset();
+                  setField('category', cat.key);
+                  router.push('/reservation/marchandise');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={qs.iconBox}>
+                  <Ionicons name={cat.icon} size={26} color={C.accent} />
+                </View>
+                <Text style={qs.label}>{cat.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Section 2 — Dernières demandes */}
+        {recentDemandes.length > 0 && (
+          <View style={qs.section}>
+            <Text style={qs.sectionTitle}>Vos dernières demandes</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              nestedScrollEnabled keyboardShouldPersistTaps="handled"
+              contentContainerStyle={qs.row}>
+              {recentDemandes.map(d => {
+                const typeInfo = TYPES_MARCHANDISE.find(t => t.key === d.type_marchandise);
+                return (
+                  <View key={d.id} style={rd.card}>
+                    <View style={rd.routeRow}>
+                      <Ionicons name="radio-button-on" size={10} color={C.accent} />
+                      <Text style={rd.city} numberOfLines={1}>{d.ville_depart}</Text>
+                    </View>
+                    <View style={rd.routeLine} />
+                    <View style={rd.routeRow}>
+                      <Ionicons name="location" size={10} color={C.primary} />
+                      <Text style={rd.city} numberOfLines={1}>{d.ville_arrivee}</Text>
+                    </View>
+                    {typeInfo && (
+                      <View style={rd.typeBadge}>
+                        <Ionicons name={typeInfo.icon} size={11} color={C.muted} style={{ marginRight: 4 }} />
+                        <Text style={rd.typeTxt}>{typeInfo.label}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity style={rd.refaireBtn} onPress={() => refaire(d)} activeOpacity={0.8}>
+                      <Ionicons name="refresh-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+                      <Text style={rd.refaireTxt}>Refaire</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
         <View style={s.formCard}>
           {/* Sélecteur mode */}
           <Text style={s.whenTitle}>Quand avez-vous besoin du transport ?</Text>
@@ -1066,4 +1164,24 @@ const opt = StyleSheet.create({
   counterVal: { fontSize: 17, fontWeight: '900', color: C.text, minWidth: 22, textAlign: 'center' },
   toggle:     { width: 46, height: 26, borderRadius: 13, backgroundColor: '#D1D5DB', justifyContent: 'center', padding: 3 },
   thumb:      { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF', elevation: 2 },
+});
+
+const qs = StyleSheet.create({
+  section:      { marginBottom: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 12, letterSpacing: -0.2 },
+  row:          { gap: 10, paddingHorizontal: 1, paddingBottom: 4 },
+  card:         { width: 88, backgroundColor: C.bg, borderRadius: 14, padding: 12, alignItems: 'center', borderWidth: 1.5, borderColor: C.border, gap: 8, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06 },
+  iconBox:      { width: 52, height: 52, borderRadius: 14, backgroundColor: C.accentLight, alignItems: 'center', justifyContent: 'center' },
+  label:        { fontSize: 11, fontWeight: '700', color: C.text, textAlign: 'center' },
+});
+
+const rd = StyleSheet.create({
+  card:       { width: 162, backgroundColor: C.bg, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: C.border, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06 },
+  routeRow:   { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  routeLine:  { width: 1, height: 12, backgroundColor: C.border, marginLeft: 4, marginVertical: 3 },
+  city:       { fontSize: 13, fontWeight: '700', color: C.text, flex: 1 },
+  typeBadge:  { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },
+  typeTxt:    { fontSize: 11, color: C.muted, fontWeight: '600' },
+  refaireBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 9, marginTop: 10 },
+  refaireTxt: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 });
