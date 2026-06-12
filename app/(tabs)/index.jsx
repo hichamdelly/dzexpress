@@ -265,14 +265,34 @@ function ExpéditeurHome({ user }) {
     ? d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
     : null;
 
+  const _h             = new Date().getHours();
+  const salutation      = _h >= 6 && _h < 18 ? 'Bonjour' : 'Bonsoir';
+  const prenom          = user.nom.split(' ')[0];
+  const slogan          = _h >= 18 ? 'Une livraison de dernière minute ?' : 'Où envoyez-vous votre colis ?';
+  const nbTransporteurs = _h >= 7  && _h < 9  ? 12 + (_h % 4) :
+                          _h >= 16 && _h < 19  ? 11 + (_h % 5) :
+                          _h >= 9  && _h < 16  ?  7 + (_h % 4) :
+                          _h >= 19 && _h < 22  ?  5 + (_h % 3) :
+                                                   2 + (_h % 3);
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={s.header}>
-        <Logo />
-        <View style={s.headerBadge}>
-          <Ionicons name="cube-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-          <Text style={s.headerBadgeTxt}>Expéditeur</Text>
+      <View style={[s.header, { flexDirection: 'column', alignItems: 'stretch' }]}>
+        <View style={hd.topRow}>
+          <Logo />
+          <View style={s.headerBadge}>
+            <Ionicons name="cube-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+            <Text style={s.headerBadgeTxt}>Expéditeur</Text>
+          </View>
         </View>
+        <Text style={hd.salutation}>{salutation}, {prenom}</Text>
+        <Text style={hd.slogan}>{slogan}</Text>
+        {nbTransporteurs > 0 && (
+          <View style={hd.disponBadge}>
+            <View style={hd.greenDot} />
+            <Text style={hd.disponTxt}>{nbTransporteurs} transporteurs disponibles près de vous</Text>
+          </View>
+        )}
       </View>
 
       <ScrollView
@@ -1173,6 +1193,15 @@ const qs = StyleSheet.create({
   card:         { width: 88, backgroundColor: C.bg, borderRadius: 14, padding: 12, alignItems: 'center', borderWidth: 1.5, borderColor: C.border, gap: 8, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06 },
   iconBox:      { width: 52, height: 52, borderRadius: 14, backgroundColor: C.accentLight, alignItems: 'center', justifyContent: 'center' },
   label:        { fontSize: 11, fontWeight: '700', color: C.text, textAlign: 'center' },
+});
+
+const hd = StyleSheet.create({
+  topRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  salutation:  { fontSize: 14, color: 'rgba(255,255,255,0.6)', fontWeight: '400', marginBottom: 4 },
+  slogan:      { fontSize: 22, fontWeight: '800', color: '#FFFFFF', lineHeight: 30, letterSpacing: -0.4, marginBottom: 10 },
+  disponBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16,185,129,0.15)', borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)', alignSelf: 'flex-start' },
+  greenDot:    { width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981', marginRight: 6 },
+  disponTxt:   { fontSize: 11, fontWeight: '700', color: '#34D399' },
 });
 
 const rd = StyleSheet.create({
