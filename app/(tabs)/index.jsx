@@ -224,7 +224,7 @@ function ExpéditeurHome({ user }) {
     ? h.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  const reset = () => {
+  const resetForm = () => {
     setDepart(''); setArrivee(''); setType(''); setSousCategorie('');
     setPoids(''); setDesc(''); setDate(null); setHeure(null);
     setEtages(0); setAide(false); setFragile(false); setExpress(false);
@@ -280,69 +280,6 @@ function ExpéditeurHome({ user }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
       >
-        {/* Section 1 — Transport rapide */}
-        <View style={qs.section}>
-          <Text style={qs.sectionTitle}>Transport rapide</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            nestedScrollEnabled keyboardShouldPersistTaps="handled"
-            contentContainerStyle={qs.row}>
-            {QUICK_CATS.map(cat => (
-              <TouchableOpacity
-                key={cat.key}
-                style={qs.card}
-                onPress={() => {
-                  reset();
-                  setField('category', cat.key);
-                  router.push('/reservation/marchandise');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={qs.iconBox}>
-                  <Ionicons name={cat.icon} size={26} color={C.accent} />
-                </View>
-                <Text style={qs.label}>{cat.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Section 2 — Dernières demandes */}
-        {recentDemandes.length > 0 && (
-          <View style={qs.section}>
-            <Text style={qs.sectionTitle}>Vos dernières demandes</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              nestedScrollEnabled keyboardShouldPersistTaps="handled"
-              contentContainerStyle={qs.row}>
-              {recentDemandes.map(d => {
-                const typeInfo = TYPES_MARCHANDISE.find(t => t.key === d.type_marchandise);
-                return (
-                  <View key={d.id} style={rd.card}>
-                    <View style={rd.routeRow}>
-                      <Ionicons name="radio-button-on" size={10} color={C.accent} />
-                      <Text style={rd.city} numberOfLines={1}>{d.ville_depart}</Text>
-                    </View>
-                    <View style={rd.routeLine} />
-                    <View style={rd.routeRow}>
-                      <Ionicons name="location" size={10} color={C.primary} />
-                      <Text style={rd.city} numberOfLines={1}>{d.ville_arrivee}</Text>
-                    </View>
-                    {typeInfo && (
-                      <View style={rd.typeBadge}>
-                        <Ionicons name={typeInfo.icon} size={11} color={C.muted} style={{ marginRight: 4 }} />
-                        <Text style={rd.typeTxt}>{typeInfo.label}</Text>
-                      </View>
-                    )}
-                    <TouchableOpacity style={rd.refaireBtn} onPress={() => refaire(d)} activeOpacity={0.8}>
-                      <Ionicons name="refresh-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-                      <Text style={rd.refaireTxt}>Refaire</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
         <View style={s.formCard}>
           {/* Sélecteur mode */}
           <Text style={s.whenTitle}>Quand avez-vous besoin du transport ?</Text>
@@ -741,6 +678,69 @@ function ExpéditeurHome({ user }) {
               }
             </TouchableOpacity>
           )}
+        </View>
+
+        {/* Vos dernières demandes */}
+        {recentDemandes.length > 0 && (
+          <View style={qs.section}>
+            <Text style={qs.sectionTitle}>Vos dernières demandes</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              nestedScrollEnabled keyboardShouldPersistTaps="handled"
+              contentContainerStyle={qs.row}>
+              {recentDemandes.map(d => {
+                const typeInfo = TYPES_MARCHANDISE.find(t => t.key === d.type_marchandise);
+                return (
+                  <View key={d.id} style={rd.card}>
+                    <View style={rd.routeRow}>
+                      <Ionicons name="radio-button-on" size={10} color={C.accent} />
+                      <Text style={rd.city} numberOfLines={1}>{d.ville_depart}</Text>
+                    </View>
+                    <View style={rd.routeLine} />
+                    <View style={rd.routeRow}>
+                      <Ionicons name="location" size={10} color={C.primary} />
+                      <Text style={rd.city} numberOfLines={1}>{d.ville_arrivee}</Text>
+                    </View>
+                    {typeInfo && (
+                      <View style={rd.typeBadge}>
+                        <Ionicons name={typeInfo.icon} size={11} color={C.muted} style={{ marginRight: 4 }} />
+                        <Text style={rd.typeTxt}>{typeInfo.label}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity style={rd.refaireBtn} onPress={() => refaire(d)} activeOpacity={0.8}>
+                      <Ionicons name="refresh-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+                      <Text style={rd.refaireTxt}>Refaire</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Transport rapide */}
+        <View style={qs.section}>
+          <Text style={qs.sectionTitle}>Transport rapide</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled keyboardShouldPersistTaps="handled"
+            contentContainerStyle={qs.row}>
+            {QUICK_CATS.map(cat => (
+              <TouchableOpacity
+                key={cat.key}
+                style={qs.card}
+                onPress={() => {
+                  reset();
+                  setField('category', cat.key);
+                  router.push('/reservation/marchandise');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={qs.iconBox}>
+                  <Ionicons name={cat.icon} size={26} color={C.accent} />
+                </View>
+                <Text style={qs.label}>{cat.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Comment ça marche */}
