@@ -146,6 +146,9 @@ export function initDatabase() {
     `ALTER TABLE offres ADD COLUMN contre_prix REAL`,
     `ALTER TABLE offres ADD COLUMN nb_contre_propositions INTEGER DEFAULT 0`,
     `ALTER TABLE offres ADD COLUMN dernier_negociateur TEXT`,
+    `ALTER TABLE demandes ADD COLUMN sous_categorie TEXT`,
+    `ALTER TABLE demandes ADD COLUMN vehicule_recommande TEXT`,
+    `ALTER TABLE demandes ADD COLUMN avertissement_affiche INTEGER DEFAULT 0`,
   ];
   for (const sql of migrations) {
     try { d.execSync(sql); } catch (_) {}
@@ -271,16 +274,20 @@ export const demandesDB = {
              type_marchandise, poids, date_souhaitee,
              type_demande = 'planifie', creneau = null,
              prix_estime = null, surge_coefficient = null,
-             options_supplementaires = null }) => {
+             options_supplementaires = null,
+             sous_categorie = null, vehicule_recommande = null,
+             avertissement_affiche = 0 }) => {
     const r = getDB().runSync(
       `INSERT INTO demandes
          (expediteur_id, ville_depart, ville_arrivee, description,
           type_marchandise, poids, date_souhaitee, type_demande, creneau,
-          prix_estime, surge_coefficient, options_supplementaires)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          prix_estime, surge_coefficient, options_supplementaires,
+          sous_categorie, vehicule_recommande, avertissement_affiche)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [expediteur_id, ville_depart, ville_arrivee, description || null,
        type_marchandise, poids || null, date_souhaitee, type_demande, creneau || null,
-       prix_estime, surge_coefficient, options_supplementaires]
+       prix_estime, surge_coefficient, options_supplementaires,
+       sous_categorie, vehicule_recommande, avertissement_affiche]
     );
     return r.lastInsertRowId;
   },

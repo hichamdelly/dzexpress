@@ -9,36 +9,35 @@ import { NotifBanner } from '../../src/components/NotifBanner';
 export default function TabLayout() {
   const { user }                          = useApp();
   const isT                               = user?.type === 'transporteur';
-  const accentColor                       = isT ? '#1A56DB' : '#F97316';
   const { unread, banner, dismissBanner } = useNotifications(user?.id);
   const msgUnread                         = useMessagesBadge(user?.id);
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Bannière animée globale — visible sur tous les onglets */}
       <NotifBanner notification={banner} onDismiss={dismissBanner} />
 
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor:   accentColor,
-          tabBarInactiveTintColor: '#94A3B8',
+          tabBarActiveTintColor:   '#0A0A0A',
+          tabBarInactiveTintColor: '#9CA3AF',
           tabBarStyle: {
             backgroundColor: '#FFFFFF',
-            borderTopColor:  '#E2E8F0',
-            height:          62,
+            borderTopColor:  '#F3F4F6',
+            borderTopWidth:  1,
+            height:          60,
             paddingBottom:   8,
-            paddingTop:      4,
+            paddingTop:      6,
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
             title: isT ? 'Disponibles' : 'Accueil',
-            tabBarIcon: ({ color }) => (
-              <Ionicons name={isT ? 'search' : 'home'} size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={isT ? 'search' : (focused ? 'home' : 'home-outline')} size={22} color={color} />
             ),
           }}
         />
@@ -47,19 +46,13 @@ export default function TabLayout() {
           name="suivi"
           options={{
             title: isT ? 'Mes courses' : 'Mes demandes',
-            tabBarIcon: ({ color }) => (
-              <Ionicons name={isT ? 'car' : 'list'} size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={isT ? (focused ? 'car-sport' : 'car-sport-outline') : (focused ? 'list' : 'list-outline')} size={22} color={color} />
             ),
-            // Badge rouge dès qu'il y a des notifications non lues
             tabBarBadge: unread > 0 ? (unread > 9 ? '9+' : unread) : undefined,
             tabBarBadgeStyle: {
-              backgroundColor: '#DC2626',
-              fontSize:         10,
-              fontWeight:       '800',
-              minWidth:         18,
-              height:           18,
-              borderRadius:     9,
-              lineHeight:       18,
+              backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
+              minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,
             },
           }}
         />
@@ -68,18 +61,13 @@ export default function TabLayout() {
           name="messages"
           options={{
             title: 'Messages',
-            tabBarIcon: ({ color }) => (
-              <Ionicons name="chatbubble-ellipses" size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={22} color={color} />
             ),
             tabBarBadge: msgUnread > 0 ? (msgUnread > 9 ? '9+' : msgUnread) : undefined,
             tabBarBadgeStyle: {
-              backgroundColor: '#DC2626',
-              fontSize:         10,
-              fontWeight:       '800',
-              minWidth:         18,
-              height:           18,
-              borderRadius:     9,
-              lineHeight:       18,
+              backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
+              minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,
             },
           }}
         />
@@ -88,8 +76,8 @@ export default function TabLayout() {
           name="profil"
           options={{
             title: 'Profil',
-            tabBarIcon: ({ color }) => (
-              <Ionicons name="person-circle" size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={24} color={color} />
             ),
           }}
         />

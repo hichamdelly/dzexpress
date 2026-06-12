@@ -4,25 +4,18 @@ import {
   StyleSheet, Platform, StatusBar, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../src/context/AppContext';
 import { usersDB, gainsDB } from '../../src/db/database';
 import { searchVilles } from '../../src/utils/wilayas';
 import { fmtPrix } from '../../src/utils/pricing';
 
 const C = {
-  blue:        '#1A56DB',
-  blueLight:   '#EBF5FF',
-  blueDark:    '#1E40AF',
-  orange:      '#F97316',
-  orangeLight: '#FFF7ED',
-  bg:          '#F8FAFC',
-  white:       '#FFFFFF',
-  text:        '#1E293B',
-  muted:       '#64748B',
-  border:      '#E2E8F0',
-  green:       '#16A34A',
-  greenLight:  '#F0FDF4',
-  red:         '#DC2626',
+  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
+  muted: '#6B7280', border: '#E5E7EB',
+  success: '#10B981', successLight: '#ECFDF5',
+  error: '#EF4444', errorLight: '#FEF2F2',
 };
 
 const WILAYAS = [
@@ -38,10 +31,12 @@ const WILAYAS = [
 ];
 
 const VEHICULES = [
-  { key: 'fourgon',  label: 'Fourgon',       icon: '🚐' },
-  { key: 'camion35', label: 'Camion 3.5T',   icon: '🚛' },
-  { key: 'camion10', label: 'Camion 10T',    icon: '🚚' },
-  { key: 'semi',     label: 'Semi-remorque', icon: '🏗️' },
+  { key: 'herbine',    label: 'Herbine',          icon: 'cart-outline' },
+  { key: 'utilitaire', label: 'Utilitaire léger', icon: 'car-outline' },
+  { key: 'fourgon',    label: 'Fourgon',          icon: 'car-sport-outline' },
+  { key: 'camion35',   label: 'Camion 3.5T',      icon: 'bus-outline' },
+  { key: 'camion10',   label: 'Camion 10T',        icon: 'cube-outline' },
+  { key: 'semi',       label: 'Semi-remorque',    icon: 'construct-outline' },
 ];
 
 export default function ProfilScreen() {
@@ -65,21 +60,14 @@ export default function ProfilScreen() {
     }
   }, [user?.id]);
 
-  const isT = user?.type === 'transporteur';
-  const accentColor = isT ? C.blue : C.orange;
-
-  const initials = user?.nom
-    ?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
-
-  const wilayaSugg = wilayaQ.length > 0
-    ? searchVilles(wilayaQ, WILAYAS)
-    : [];
+  const isT      = user?.type === 'transporteur';
+  const initials = user?.nom?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+  const wilayaSugg = wilayaQ.length > 0 ? searchVilles(wilayaQ, WILAYAS) : [];
 
   const handleSave = async () => {
-    if (!nom.trim())  return Alert.alert('Requis', 'Entre ton nom.');
-    if (!wilaya)      return Alert.alert('Requis', 'Choisis ta wilaya.');
-    if (isT && !vehicule) return Alert.alert('Requis', 'Choisis le type de véhicule.');
-
+    if (!nom.trim())           return Alert.alert('Requis', 'Entre ton nom.');
+    if (!wilaya)               return Alert.alert('Requis', 'Choisis ta wilaya.');
+    if (isT && !vehicule)      return Alert.alert('Requis', 'Choisis le type de véhicule.');
     setSaving(true);
     try {
       usersDB.update(user.id, {
@@ -89,7 +77,7 @@ export default function ProfilScreen() {
       });
       refreshUser();
       setEditing(false);
-      Alert.alert('✅ Profil mis à jour', 'Labès ! Tes infos sont sauvegardées.');
+      Alert.alert('Profil mis à jour', 'Tes informations ont été sauvegardées.');
     } catch (e) {
       Alert.alert('Erreur', e.message);
     } finally {
@@ -98,11 +86,11 @@ export default function ProfilScreen() {
   };
 
   const toggleDispo = () => {
-    const newVal = !dispo;
-    setDispo(newVal);
+    const nv = !dispo;
+    setDispo(nv);
     usersDB.update(user.id, {
       nom: user.nom, telephone: user.telephone, wilaya: user.wilaya,
-      vehicule: user.vehicule, disponible: newVal ? 1 : 0,
+      vehicule: user.vehicule, disponible: nv ? 1 : 0,
     });
     refreshUser();
   };
@@ -117,67 +105,59 @@ export default function ProfilScreen() {
 
   return (
     <ScrollView style={s.root} contentContainerStyle={{ paddingBottom: 80 }}>
-      <StatusBar barStyle="light-content" backgroundColor={isT ? C.blueDark : C.orange} />
+      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
 
       {/* Header */}
-      <View style={[s.header, { backgroundColor: isT ? C.blueDark : C.orange }]}>
-        <View style={[s.avatar, { borderColor: isT ? C.blue : C.orange }]}>
+      <View style={s.header}>
+        <View style={s.avatar}>
           <Text style={s.avatarTxt}>{initials}</Text>
         </View>
         <Text style={s.userName}>{user.nom}</Text>
-        <View style={[s.typeBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-          <Text style={s.typeBadgeTxt}>{isT ? '🚛 Transporteur' : '📦 Expéditeur'}</Text>
+        <View style={s.typeBadge}>
+          <Ionicons name={isT ? 'car-sport-outline' : 'cube-outline'} size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+          <Text style={s.typeBadgeTxt}>{isT ? 'Transporteur' : 'Expéditeur'}</Text>
         </View>
       </View>
 
-      {/* Disponibilité (transporteur uniquement) */}
+      {/* Toggle disponibilité */}
       {isT && (
-        <TouchableOpacity
-          style={[s.dispoCard, { borderColor: dispo ? C.green : C.border }]}
-          onPress={toggleDispo}
-          activeOpacity={0.85}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={s.dispoTitle}>{dispo ? '🟢 Disponible' : '🔴 Non disponible'}</Text>
-            <Text style={s.dispoSub}>
-              {dispo ? 'Tu reçois de nouvelles demandes' : 'Tu ne reçois pas de demandes'}
-            </Text>
+        <TouchableOpacity style={[s.dispoCard, dispo && { borderColor: C.success }]} onPress={toggleDispo} activeOpacity={0.85}>
+          <View style={[s.dispoIndicator, { backgroundColor: dispo ? C.success : '#9CA3AF' }]} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={s.dispoTitle}>{dispo ? 'Disponible' : 'Non disponible'}</Text>
+            <Text style={s.dispoSub}>{dispo ? 'Tu reçois de nouvelles demandes' : 'Tu ne reçois pas de demandes'}</Text>
           </View>
-          <View style={[s.toggle, dispo && { backgroundColor: C.green }]}>
-            <View style={[s.toggleThumb, dispo && s.toggleThumbOn]} />
+          <View style={[s.toggle, dispo && { backgroundColor: C.success }]}>
+            <View style={[s.toggleThumb, dispo && { alignSelf: 'flex-end' }]} />
           </View>
         </TouchableOpacity>
       )}
 
-      {/* ── Dashboard gains (transporteur) ── */}
+      {/* Dashboard gains */}
       {isT && gains !== null && (
-        <View style={[s.section, { marginTop: 16, marginBottom: 0 }]}>
-          <Text style={s.sectionTitle}>💵 Mes gains</Text>
+        <View style={[s.section, { marginTop: 12, marginBottom: 0 }]}>
+          <View style={s.sectionHeader}>
+            <Ionicons name="wallet-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
+            <Text style={s.sectionTitle}>Mes gains</Text>
+          </View>
           <View style={g.grid}>
-            <View style={g.cell}>
-              <Text style={g.cellLabel}>Aujourd'hui</Text>
-              <Text style={g.cellAmt}>{fmtPrix(gains.today)}</Text>
-            </View>
-            <View style={[g.cell, g.cellBorder]}>
-              <Text style={g.cellLabel}>Cette semaine</Text>
-              <Text style={g.cellAmt}>{fmtPrix(gains.semaine)}</Text>
-            </View>
-            <View style={[g.cell, g.cellBorder]}>
-              <Text style={g.cellLabel}>Ce mois</Text>
-              <Text style={g.cellAmt}>{fmtPrix(gains.mois)}</Text>
-            </View>
+            <GainCell label="Aujourd'hui" amount={gains.today} />
+            <View style={g.sep} />
+            <GainCell label="Cette semaine" amount={gains.semaine} />
+            <View style={g.sep} />
+            <GainCell label="Ce mois" amount={gains.mois} />
           </View>
           <View style={g.footer}>
             <Text style={g.footerTxt}>
-              Total : <Text style={{ fontWeight: '900', color: C.blue }}>{fmtPrix(gains.total)}</Text>
+              Total :{' '}
+              <Text style={{ fontWeight: '900', color: C.primary }}>{fmtPrix(gains.total)}</Text>
               {'  ·  '}
-              {gains.nbCourses} course{gains.nbCourses !== 1 ? 's' : ''} effectuée{gains.nbCourses !== 1 ? 's' : ''}
+              {gains.nbCourses} course{gains.nbCourses !== 1 ? 's' : ''}
             </Text>
           </View>
-          <View style={g.commissionInfo}>
-            <Text style={g.commissionTxt}>
-              Commission DzExpress : 15% (standard) — 10% si votre note &gt; 4,5 ⭐
-            </Text>
+          <View style={g.commissionRow}>
+            <Ionicons name="information-circle-outline" size={13} color={C.muted} style={{ marginRight: 5 }} />
+            <Text style={g.commissionTxt}>Commission 15% (10% si note &gt; 4,5)</Text>
           </View>
         </View>
       )}
@@ -185,34 +165,34 @@ export default function ProfilScreen() {
       {/* Infos profil */}
       <View style={s.section}>
         <View style={s.sectionHeader}>
+          <Ionicons name="person-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
           <Text style={s.sectionTitle}>Mon profil</Text>
           {!editing && (
-            <TouchableOpacity onPress={() => {
-              setNom(user.nom); setTel(user.telephone);
+            <TouchableOpacity style={s.editBtn} onPress={() => {
+              setNom(user.nom); setTel(user.telephone || '');
               setWilaya(user.wilaya); setVehicule(user.vehicule || '');
               setDispo(user.disponible === 1); setEditing(true);
             }}>
-              <Text style={[s.editBtn, { color: accentColor }]}>✏️ Modifier</Text>
+              <Ionicons name="pencil-outline" size={14} color={C.muted} />
+              <Text style={s.editBtnTxt}>Modifier</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {editing ? (
           <View>
-            <Text style={s.label}>Nom complet</Text>
-            <TextInput style={s.input} value={nom} onChangeText={setNom}
-              placeholderTextColor={C.muted} />
+            <FieldLabel>Nom complet</FieldLabel>
+            <TextInput style={s.input} value={nom} onChangeText={setNom} placeholderTextColor="#9CA3AF" />
 
-            <Text style={s.label}>Téléphone</Text>
-            <TextInput style={s.input} value={tel} onChangeText={setTel}
-              keyboardType="phone-pad" placeholderTextColor={C.muted} />
+            <FieldLabel>Téléphone</FieldLabel>
+            <TextInput style={s.input} value={tel} onChangeText={setTel} keyboardType="phone-pad" placeholderTextColor="#9CA3AF" />
 
-            <Text style={s.label}>Wilaya</Text>
+            <FieldLabel>Wilaya</FieldLabel>
             <TextInput
               style={s.input}
               value={wilayaQ || wilaya}
-              placeholder="Rechercher…"
-              placeholderTextColor={C.muted}
+              placeholder="Rechercher une wilaya…"
+              placeholderTextColor="#9CA3AF"
               onChangeText={t => { setWilayaQ(t); setWilaya(''); setShowW(true); }}
               onFocus={() => setShowW(true)}
             />
@@ -221,25 +201,34 @@ export default function ProfilScreen() {
                 {wilayaSugg.map(w => (
                   <TouchableOpacity key={w} style={s.suggItem}
                     onPress={() => { setWilaya(w); setWilayaQ(''); setShowW(false); }}>
-                    <Text style={s.suggTxt}>📍 {w}</Text>
+                    <Ionicons name="location-outline" size={13} color={C.muted} style={{ marginRight: 8 }} />
+                    <Text style={s.suggTxt}>{w}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
-            {wilaya ? <Text style={s.selectedWilaya}>✓ {wilaya}</Text> : null}
+            {wilaya ? (
+              <View style={s.selectedRow}>
+                <Ionicons name="checkmark-circle" size={14} color={C.success} style={{ marginRight: 4 }} />
+                <Text style={s.selectedTxt}>{wilaya}</Text>
+              </View>
+            ) : null}
 
             {isT && (
               <>
-                <Text style={[s.label, { marginTop: 4 }]}>Type de véhicule</Text>
+                <FieldLabel>Type de véhicule</FieldLabel>
                 <View style={s.vehicleGrid}>
-                  {VEHICULES.map(v => (
-                    <TouchableOpacity key={v.key}
-                      style={[s.vehicleChip, vehicule === v.key && { backgroundColor: C.blueLight, borderColor: C.blue }]}
-                      onPress={() => setVehicule(v.key)}>
-                      <Text style={{ fontSize: 20 }}>{v.icon}</Text>
-                      <Text style={[s.vehicleChipTxt, vehicule === v.key && { color: C.blue }]}>{v.label}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {VEHICULES.map(v => {
+                    const active = vehicule === v.key;
+                    return (
+                      <TouchableOpacity key={v.key}
+                        style={[s.vehicleChip, active && { backgroundColor: C.accentLight, borderColor: C.accent }]}
+                        onPress={() => setVehicule(v.key)}>
+                        <Ionicons name={v.icon} size={18} color={active ? C.accent : C.muted} />
+                        <Text style={[s.vehicleChipTxt, active && { color: C.accent }]}>{v.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </>
             )}
@@ -248,47 +237,49 @@ export default function ProfilScreen() {
               <TouchableOpacity style={s.cancelEditBtn} onPress={() => setEditing(false)}>
                 <Text style={s.cancelEditTxt}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.saveBtn, { backgroundColor: accentColor }]}
-                onPress={handleSave} disabled={saving}>
+              <TouchableOpacity style={s.saveBtn} onPress={handleSave} disabled={saving}>
                 {saving
                   ? <ActivityIndicator color="white" size="small" />
-                  : <Text style={s.saveBtnTxt}>Enregistrer ✓</Text>
+                  : <Text style={s.saveBtnTxt}>Enregistrer</Text>
                 }
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <View style={s.infoList}>
-            <InfoRow icon="👤" label="Nom" value={user.nom} />
-            <InfoRow icon="📞" label="Téléphone" value={user.telephone} />
-            <InfoRow icon="📍" label="Wilaya" value={user.wilaya} />
+            <InfoRow iconName="person-outline" label="Nom" value={user.nom} />
+            <InfoRow iconName="call-outline" label="Téléphone" value={user.telephone} />
+            <InfoRow iconName="location-outline" label="Wilaya" value={user.wilaya} />
             {isT && user.vehicule && (
               <InfoRow
-                icon={VEHICULES.find(v => v.key === user.vehicule)?.icon || '🚛'}
+                iconName={VEHICULES.find(v => v.key === user.vehicule)?.icon || 'car-sport-outline'}
                 label="Véhicule"
                 value={VEHICULES.find(v => v.key === user.vehicule)?.label || user.vehicule}
               />
             )}
-            <TouchableOpacity
-              style={[s.otpBtn, { borderColor: accentColor }]}
-              onPress={() => router.push(`/otp?phone=${encodeURIComponent(user.telephone || '')}`)}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.otpBtnTxt, { color: accentColor }]}>🔐 Vérifier mon numéro</Text>
+            <TouchableOpacity style={s.otpBtn}
+              onPress={() => router.push(`/otp?phone=${encodeURIComponent(user.telephone || '')}`)}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={C.accent} style={{ marginRight: 8 }} />
+              <Text style={s.otpBtnTxt}>Vérifier mon numéro</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
-      {/* A propos */}
+      {/* À propos */}
       <View style={[s.section, { marginTop: 8 }]}>
-        <Text style={s.sectionTitle}>À propos</Text>
+        <View style={s.sectionHeader}>
+          <Ionicons name="information-circle-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
+          <Text style={s.sectionTitle}>À propos</Text>
+        </View>
         <View style={s.aboutCard}>
-          <Text style={s.aboutLogo}>🚛 DzExpress</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <View style={s.logoBadge}><Text style={s.logoDz}>Dz</Text></View>
+            <Text style={s.logoExpress}>Express</Text>
+          </View>
           <Text style={s.aboutDesc}>
-            Plateforme de transport de marchandises pour particuliers en Algérie.{'\n'}
-            Simple · Rapide · 100% Algérien 🇩🇿
+            Plateforme de transport de marchandises en Algérie.{'\n'}
+            Simple · Rapide · 100% Algérien
           </Text>
           <Text style={s.aboutVersion}>Version 1.0.0</Text>
         </View>
@@ -296,16 +287,23 @@ export default function ProfilScreen() {
 
       {/* Déconnexion */}
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Text style={s.logoutTxt}>🚪 Se déconnecter</Text>
+        <Ionicons name="log-out-outline" size={20} color={C.error} style={{ marginRight: 8 }} />
+        <Text style={s.logoutTxt}>Se déconnecter</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
-function InfoRow({ icon, label, value }) {
+function FieldLabel({ children }) {
+  return <Text style={s.fieldLabel}>{children}</Text>;
+}
+
+function InfoRow({ iconName, label, value }) {
   return (
     <View style={row.root}>
-      <Text style={row.icon}>{icon}</Text>
+      <View style={row.iconWrap}>
+        <Ionicons name={iconName} size={18} color={C.muted} />
+      </View>
       <View style={{ flex: 1 }}>
         <Text style={row.label}>{label}</Text>
         <Text style={row.value}>{value || '—'}</Text>
@@ -313,72 +311,107 @@ function InfoRow({ icon, label, value }) {
     </View>
   );
 }
+
+function GainCell({ label, amount }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <Text style={g.cellLabel}>{label}</Text>
+      <Text style={g.cellAmt}>{fmtPrix(amount)}</Text>
+    </View>
+  );
+}
+
 const row = StyleSheet.create({
-  root:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 14 },
-  icon:  { fontSize: 22, width: 30 },
-  label: { fontSize: 11, color: C.muted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
-  value: { fontSize: 15, color: C.text, fontWeight: '600', marginTop: 2 },
-});
-
-const s = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: C.bg },
-  header:      { alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 70 : (StatusBar.currentHeight || 24) + 24, paddingBottom: 28, paddingHorizontal: 24 },
-  avatar:      { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', borderWidth: 3, marginBottom: 12 },
-  avatarTxt:   { fontSize: 28, fontWeight: '800', color: 'white' },
-  userName:    { fontSize: 22, fontWeight: '900', color: 'white', marginBottom: 8 },
-  typeBadge:   { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
-  typeBadgeTxt:{ fontSize: 14, fontWeight: '700', color: 'white' },
-
-  dispoCard:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, marginHorizontal: 16, marginTop: 16, borderRadius: 16, padding: 18, borderWidth: 2, elevation: 2 },
-  dispoTitle:  { fontSize: 16, fontWeight: '800', color: C.text, marginBottom: 3 },
-  dispoSub:    { fontSize: 13, color: C.muted },
-  toggle:      { width: 52, height: 30, borderRadius: 15, backgroundColor: C.border, justifyContent: 'center', padding: 3 },
-  toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: C.white, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2 },
-  toggleThumbOn: { alignSelf: 'flex-end' },
-
-  section:     { backgroundColor: C.white, margin: 16, borderRadius: 18, padding: 20, elevation: 1, borderWidth: 1, borderColor: C.border },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle:{ fontSize: 16, fontWeight: '800', color: C.text },
-  editBtn:     { fontSize: 14, fontWeight: '700' },
-  infoList:    { gap: 0 },
-
-  label:       { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
-  input:       { backgroundColor: C.bg, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, marginBottom: 14 },
-  suggBox:     { backgroundColor: C.white, borderWidth: 1, borderColor: C.border, borderRadius: 10, marginTop: -10, marginBottom: 10, overflow: 'hidden', elevation: 4 },
-  suggItem:    { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.bg },
-  suggTxt:     { fontSize: 14, color: C.text },
-  selectedWilaya: { fontSize: 13, color: C.green, fontWeight: '700', marginTop: -8, marginBottom: 14 },
-
-  vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  vehicleChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bg },
-  vehicleChipTxt: { fontSize: 13, fontWeight: '600', color: C.muted },
-
-  editBtns:    { flexDirection: 'row', gap: 10, marginTop: 6 },
-  cancelEditBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
-  cancelEditTxt: { fontSize: 15, fontWeight: '700', color: C.muted },
-  saveBtn:     { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
-  saveBtnTxt:  { color: 'white', fontSize: 15, fontWeight: '700' },
-
-  aboutCard:   { backgroundColor: C.bg, borderRadius: 12, padding: 16 },
-  aboutLogo:   { fontSize: 18, fontWeight: '900', color: C.blue, marginBottom: 8 },
-  aboutDesc:   { fontSize: 13, color: C.muted, lineHeight: 20, marginBottom: 8 },
-  aboutVersion:{ fontSize: 12, color: C.border },
-
-  otpBtn:      { marginTop: 14, borderWidth: 1.5, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
-  otpBtnTxt:   { fontSize: 14, fontWeight: '700' },
-
-  logoutBtn:   { margin: 16, backgroundColor: '#FEF2F2', borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: '#FECACA' },
-  logoutTxt:   { fontSize: 16, fontWeight: '700', color: C.red },
+  root:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  iconWrap:{ width: 34, height: 34, borderRadius: 10, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  label:   { fontSize: 11, color: C.muted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  value:   { fontSize: 15, color: C.text, fontWeight: '600' },
 });
 
 const g = StyleSheet.create({
-  grid:         { flexDirection: 'row', marginTop: 14, marginBottom: 6 },
-  cell:         { flex: 1, alignItems: 'center' },
-  cellBorder:   { borderLeftWidth: 1, borderLeftColor: '#E2E8F0' },
-  cellLabel:    { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', marginBottom: 4 },
-  cellAmt:      { fontSize: 18, fontWeight: '900', color: C.blue },
-  footer:       { borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10, alignItems: 'center' },
-  footerTxt:    { fontSize: 13, color: C.muted, fontWeight: '600' },
-  commissionInfo:{ backgroundColor: '#EBF5FF', borderRadius: 10, padding: 10, marginTop: 10, borderWidth: 1, borderColor: '#BFDBFE' },
-  commissionTxt: { fontSize: 12, color: C.blue, fontWeight: '600', lineHeight: 18 },
+  grid:        { flexDirection: 'row', paddingVertical: 14 },
+  sep:         { width: 1, backgroundColor: C.border },
+  cellLabel:   { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5 },
+  cellAmt:     { fontSize: 20, fontWeight: '900', color: C.text, letterSpacing: -0.5 },
+  footer:      { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12, alignItems: 'center' },
+  footerTxt:   { fontSize: 13, color: C.muted, fontWeight: '600' },
+  commissionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },
+  commissionTxt: { fontSize: 12, color: C.muted, fontWeight: '500', flex: 1 },
+});
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.bgAlt },
+
+  header: {
+    backgroundColor: C.primary,
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 70 : (StatusBar.currentHeight || 24) + 24,
+    paddingBottom: 28, paddingHorizontal: 24,
+  },
+  avatar:     { width: 78, height: 78, borderRadius: 39, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' },
+  avatarTxt:  { fontSize: 28, fontWeight: '900', color: '#FFFFFF' },
+  userName:   { fontSize: 22, fontWeight: '800', color: '#FFFFFF', marginBottom: 10, letterSpacing: -0.4 },
+  typeBadge:  { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 50 },
+  typeBadgeTxt: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+
+  dispoCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg,
+    marginHorizontal: 16, marginTop: 16, borderRadius: 12, padding: 16,
+    borderWidth: 1.5, borderColor: C.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, elevation: 2,
+  },
+  dispoIndicator: { width: 10, height: 10, borderRadius: 5 },
+  dispoTitle: { fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 2 },
+  dispoSub:   { fontSize: 13, color: C.muted },
+  toggle:     { width: 48, height: 28, borderRadius: 14, backgroundColor: '#D1D5DB', justifyContent: 'center', padding: 3 },
+  toggleThumb:{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFFFFF', elevation: 2, shadowColor: '#000', shadowOpacity: 0.15 },
+
+  section: {
+    backgroundColor: C.bg, margin: 16, borderRadius: 12, padding: 18,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, elevation: 2,
+    borderWidth: 1, borderColor: '#F3F4F6',
+  },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  sectionTitle:  { fontSize: 15, fontWeight: '700', color: C.text, flex: 1 },
+
+  editBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: C.bgAlt },
+  editBtnTxt: { fontSize: 13, fontWeight: '600', color: C.muted },
+
+  infoList: {},
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  input: { backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, marginBottom: 14 },
+
+  suggBox:  { backgroundColor: C.bg, borderWidth: 1, borderColor: C.border, borderRadius: 10, marginTop: -10, marginBottom: 10, overflow: 'hidden', elevation: 4 },
+  suggItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.bgAlt },
+  suggTxt:  { fontSize: 14, color: C.text },
+
+  selectedRow: { flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 14 },
+  selectedTxt: { fontSize: 13, color: C.success, fontWeight: '700' },
+
+  vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  vehicleChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgAlt },
+  vehicleChipTxt: { fontSize: 13, fontWeight: '600', color: C.muted },
+
+  editBtns:     { flexDirection: 'row', gap: 10, marginTop: 6 },
+  cancelEditBtn:{ flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 50, paddingVertical: 14, alignItems: 'center' },
+  cancelEditTxt:{ fontSize: 14, fontWeight: '700', color: C.muted },
+  saveBtn:      { flex: 2, backgroundColor: C.primary, borderRadius: 50, paddingVertical: 14, alignItems: 'center' },
+  saveBtnTxt:   { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+
+  otpBtn:    { flexDirection: 'row', alignItems: 'center', marginTop: 14, paddingVertical: 13, paddingHorizontal: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 10, backgroundColor: C.bgAlt },
+  otpBtnTxt: { fontSize: 14, fontWeight: '700', color: C.accent },
+
+  aboutCard:    { backgroundColor: C.bgAlt, borderRadius: 10, padding: 14 },
+  logoBadge:    { backgroundColor: C.accent, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, marginRight: 5 },
+  logoDz:       { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  logoExpress:  { color: C.text, fontSize: 16, fontWeight: '800' },
+  aboutDesc:    { fontSize: 13, color: C.muted, lineHeight: 20, marginBottom: 8 },
+  aboutVersion: { fontSize: 11, color: '#D1D5DB', fontWeight: '500' },
+
+  logoutBtn: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    margin: 16, backgroundColor: C.errorLight, borderRadius: 12,
+    paddingVertical: 16, borderWidth: 1.5, borderColor: '#FCA5A5',
+  },
+  logoutTxt: { fontSize: 15, fontWeight: '700', color: C.error },
 });

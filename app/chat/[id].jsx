@@ -5,28 +5,20 @@ import {
   Animated, ActivityIndicator, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '../../src/context/AppContext';
 import { demandesDB, messagesDB } from '../../src/db/database';
 import { playNotifSound } from '../../src/utils/sound';
 
-// ── Couleurs ─────────────────────────────────────────────────
 const C = {
-  blue:      '#1A56DB',
-  blueLight: '#EBF5FF',
-  blueDark:  '#1E40AF',
-  orange:    '#F97316',
-  bg:        '#F8FAFC',
-  white:     '#FFFFFF',
-  text:      '#1E293B',
-  muted:     '#64748B',
-  border:    '#E2E8F0',
-  green:     '#16A34A',
-  red:       '#DC2626',
-  redLight:  '#FEF2F2',
+  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
+  muted: '#6B7280', border: '#E5E7EB',
+  success: '#10B981', successLight: '#ECFDF5',
+  error: '#EF4444', errorLight: '#FEF2F2',
 };
 
-// Waveform statique déterministe (même pour tous les messages)
 const WAVE = [3, 7, 11, 8, 14, 10, 6, 12, 9, 13, 5, 8, 11, 7, 4, 9, 12, 6];
 
 function fmtDuration(sec) {
@@ -34,56 +26,43 @@ function fmtDuration(sec) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-// ════════════════════════════════════════════════════════════
 export default function ChatScreen() {
   const { id }   = useLocalSearchParams();
   const router   = useRouter();
   const { user } = useApp();
 
-  // ── État texte / messages ────────────────────────────────
-  const [demande, setDemande]     = useState(null);
-  const [messages, setMessages]   = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [sending, setSending]     = useState(false);
-  const [bannerMsg, setBannerMsg] = useState(null);
+  const [demande, setDemande]       = useState(null);
+  const [messages, setMessages]     = useState([]);
+  const [inputText, setInputText]   = useState('');
+  const [sending, setSending]       = useState(false);
+  const [bannerMsg, setBannerMsg]   = useState(null);
 
-  // ── État enregistrement ──────────────────────────────────
-  const [recording, setRecording]         = useState(null);
-  const [isRecording, setIsRecording]     = useState(false);
+  const [recording, setRecording]           = useState(null);
+  const [isRecording, setIsRecording]       = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
+  const [playingId, setPlayingId]           = useState(null);
 
-  // ── État lecture vocale ──────────────────────────────────
-  const [playingId, setPlayingId] = useState(null);
+  const flatListRef  = useRef(null);
+  const lastCountRef = useRef(0);
+  const intervalRef  = useRef(null);
+  const recTimerRef  = useRef(null);
+  const soundRef     = useRef(null);
+  const bannerY      = useRef(new Animated.Value(-70)).current;
+  const recPulse     = useRef(new Animated.Value(1)).current;
 
-  // ── Refs ─────────────────────────────────────────────────
-  const flatListRef   = useRef(null);
-  const lastCountRef  = useRef(0);
-  const intervalRef   = useRef(null);
-  const recTimerRef   = useRef(null);
-  const soundRef      = useRef(null);
-  const bannerY       = useRef(new Animated.Value(-70)).current;
-  const recPulse      = useRef(new Animated.Value(1)).current;
-
-  const isExpéditeur = user?.type === 'expediteur';
-  const myAccent     = isExpéditeur ? C.orange : C.blue;
-  const headerBg     = isExpéditeur ? C.orange  : C.blueDark;
-
-  // ── Demande ──────────────────────────────────────────────
   useEffect(() => {
     try { setDemande(demandesDB.getById(parseInt(id))); } catch (_) {}
   }, [id]);
 
-  const otherName = isExpéditeur
+  const otherName = user?.type === 'expediteur'
     ? (demande?.transporteur_nom || 'Transporteur')
     : (demande?.expediteur_nom   || 'Expéditeur');
 
-  // ── Nettoyage son au démontage ───────────────────────────
   useEffect(() => () => {
     soundRef.current?.unloadAsync();
     clearInterval(recTimerRef.current);
   }, []);
 
-  // ── Bannière nouveau message ─────────────────────────────
   const showBanner = useCallback((msg) => {
     setBannerMsg(msg);
     bannerY.setValue(-70);
@@ -94,7 +73,6 @@ export default function ChatScreen() {
     ]).start(() => setBannerMsg(null));
   }, [bannerY]);
 
-  // ── Chargement messages (refresh 3 s) ────────────────────
   const loadMessages = useCallback(() => {
     try {
       const msgs = messagesDB.getByDemande(parseInt(id));
@@ -102,9 +80,9 @@ export default function ChatScreen() {
         const last = msgs[msgs.length - 1];
         if (last.sender_id !== user?.id) {
           const preview = last.type === 'vocal'
-            ? '🎤 Message vocal'
+            ? 'Message vocal'
             : last.contenu.length > 55 ? last.contenu.slice(0, 55) + '…' : last.contenu;
-          showBanner(`💬 ${last.sender_nom} : ${preview}`);
+          showBanner(`${last.sender_nom} : ${preview}`);
           playNotifSound();
         }
       }
@@ -125,7 +103,6 @@ export default function ChatScreen() {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
   }, [messages.length]);
 
-  // ── Envoi texte ──────────────────────────────────────────
   const sendMessage = () => {
     const contenu = inputText.trim();
     if (!contenu || sending) return;
@@ -141,7 +118,6 @@ export default function ChatScreen() {
     }
   };
 
-  // ── Enregistrement vocal ─────────────────────────────────
   const startRecording = async () => {
     try {
       const { granted } = await Audio.requestPermissionsAsync();
@@ -149,29 +125,19 @@ export default function ChatScreen() {
         Alert.alert('Microphone requis', 'Active l\'accès au micro dans les paramètres.');
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS:     true,
-        playsInSilentModeIOS:   true,
-        shouldDuckAndroid:      true,
-        playThroughEarpieceAndroid: false,
-      });
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true, shouldDuckAndroid: true, playThroughEarpieceAndroid: false });
+      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       setRecording(rec);
       setIsRecording(true);
       setRecordDuration(0);
-
-      // Pulsation du bouton
       Animated.loop(
         Animated.sequence([
-          Animated.timing(recPulse, { toValue: 1.25, duration: 600, useNativeDriver: true }),
+          Animated.timing(recPulse, { toValue: 1.22, duration: 600, useNativeDriver: true }),
           Animated.timing(recPulse, { toValue: 1,    duration: 600, useNativeDriver: true }),
         ])
       ).start();
-
       recTimerRef.current = setInterval(() => setRecordDuration(d => d + 1), 1000);
-    } catch (e) {
+    } catch {
       Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement.');
     }
   };
@@ -183,35 +149,30 @@ export default function ChatScreen() {
     recPulse.setValue(1);
     const dur = recordDuration;
     setIsRecording(false);
-
     try {
       await recording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: false });
       const uri = recording.getURI();
       setRecording(null);
       setRecordDuration(0);
-
-      if (uri && dur >= 1) {                // minimum 1 seconde
+      if (uri && dur >= 1) {
         messagesDB.createVoice(parseInt(id), user.id, uri, dur);
         loadMessages();
       }
-    } catch (_) {
+    } catch {
       setRecording(null);
       setRecordDuration(0);
     }
   };
 
-  // ── Lecture vocale ───────────────────────────────────────
   const playVoice = async (msgId, uri) => {
     try {
-      // Stoppe le son en cours
       if (soundRef.current) {
         await soundRef.current.stopAsync();
         await soundRef.current.unloadAsync();
         soundRef.current = null;
       }
       if (playingId === msgId) { setPlayingId(null); return; }
-
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: false });
       const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
       soundRef.current = sound;
@@ -223,24 +184,21 @@ export default function ChatScreen() {
           setPlayingId(null);
         }
       });
-    } catch (_) {
+    } catch {
       Alert.alert('Lecture impossible', 'Ce fichier audio ne peut pas être lu.');
       setPlayingId(null);
     }
   };
 
-  // ── Rendu bulle ───────────────────────────────────────────
   const renderMsg = ({ item: m, index }) => {
     const isMe       = m.sender_id === user?.id;
     const showAvatar = !isMe && (index === 0 || messages[index - 1]?.sender_id !== m.sender_id);
-    const showTime   = index === messages.length - 1 ||
-                       messages[index + 1]?.sender_id !== m.sender_id;
+    const showTime   = index === messages.length - 1 || messages[index + 1]?.sender_id !== m.sender_id;
     const time       = m.created_at ? m.created_at.slice(11, 16) : '';
     const isPlaying  = playingId === m.id;
 
     return (
       <View style={[b.row, isMe && b.rowMe]}>
-        {/* Avatar */}
         {!isMe && (
           <View style={[b.avatar, !showAvatar && { opacity: 0 }]}>
             <Text style={b.avatarTxt}>
@@ -248,55 +206,36 @@ export default function ChatScreen() {
             </Text>
           </View>
         )}
-
         <View style={{ maxWidth: '78%' }}>
           {!isMe && showAvatar && <Text style={b.senderName}>{m.sender_nom}</Text>}
-
-          {/* ── Bulle vocale ── */}
           {m.type === 'vocal' ? (
             <TouchableOpacity
-              style={[b.bubble, b.voiceBubble,
-                isMe ? [b.bubbleMe, { backgroundColor: myAccent }] : b.bubbleOther
-              ]}
+              style={[b.bubble, b.voiceBubble, isMe ? [b.bubbleMe, { backgroundColor: C.primary }] : b.bubbleOther]}
               onPress={() => playVoice(m.id, m.uri_fichier)}
               activeOpacity={0.8}
             >
-              {/* Bouton play/pause */}
-              <View style={[b.playCircle, {
-                backgroundColor: isMe ? 'rgba(255,255,255,0.25)' : C.blueLight,
-              }]}>
-                <Text style={{ fontSize: 16, color: isMe ? 'white' : C.blue }}>
-                  {isPlaying ? '⏸' : '▶'}
-                </Text>
+              <View style={[b.playCircle, { backgroundColor: isMe ? 'rgba(255,255,255,0.18)' : C.bgAlt }]}>
+                <Ionicons name={isPlaying ? 'pause' : 'play'} size={16} color={isMe ? '#FFFFFF' : C.primary} />
               </View>
-
-              {/* Waveform */}
               <View style={b.waveform}>
                 {WAVE.map((h, i) => (
                   <View key={i} style={[b.bar, {
                     height: h,
                     backgroundColor: isPlaying
-                      ? (isMe ? 'rgba(255,255,255,0.9)' : C.blue)
-                      : (isMe ? 'rgba(255,255,255,0.45)' : '#CBD5E1'),
+                      ? (isMe ? 'rgba(255,255,255,0.9)' : C.primary)
+                      : (isMe ? 'rgba(255,255,255,0.4)' : C.border),
                   }]} />
                 ))}
               </View>
-
-              {/* Durée */}
-              <Text style={[b.voiceDur, { color: isMe ? 'rgba(255,255,255,0.8)' : C.muted }]}>
+              <Text style={[b.voiceDur, { color: isMe ? 'rgba(255,255,255,0.75)' : C.muted }]}>
                 {fmtDuration(m.duree)}
               </Text>
             </TouchableOpacity>
-
           ) : (
-            /* ── Bulle texte ── */
-            <View style={[b.bubble,
-              isMe ? [b.bubbleMe, { backgroundColor: myAccent }] : b.bubbleOther
-            ]}>
-              <Text style={[b.bubbleTxt, isMe && { color: 'white' }]}>{m.contenu}</Text>
+            <View style={[b.bubble, isMe ? [b.bubbleMe, { backgroundColor: C.primary }] : b.bubbleOther]}>
+              <Text style={[b.bubbleTxt, isMe && { color: '#FFFFFF' }]}>{m.contenu}</Text>
             </View>
           )}
-
           {showTime && (
             <Text style={[b.time, isMe && b.timeMe]}>
               {time}{isMe && (m.lu ? '  ✓✓' : '  ✓')}
@@ -307,25 +246,20 @@ export default function ChatScreen() {
     );
   };
 
-  // ────────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: C.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <StatusBar barStyle="light-content" backgroundColor={headerBg} />
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bgAlt }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
 
-      {/* ── Bannière nouveau message ── */}
       {bannerMsg && (
         <Animated.View style={[s.banner, { transform: [{ translateY: bannerY }] }]}>
+          <Ionicons name="chatbubble-ellipses" size={14} color="#FFFFFF" style={{ marginRight: 7 }} />
           <Text style={s.bannerTxt} numberOfLines={2}>{bannerMsg}</Text>
         </Animated.View>
       )}
 
-      {/* ── Header ── */}
-      <View style={[s.header, { backgroundColor: headerBg }]}>
+      <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Text style={s.backTxt}>← Retour</Text>
+          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={s.headerCenter}>
           <View style={s.nameRow}>
@@ -340,7 +274,6 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      {/* ── Liste messages ── */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -350,19 +283,18 @@ export default function ChatScreen() {
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         ListEmptyComponent={() => (
           <View style={s.empty}>
-            <Text style={{ fontSize: 52, marginBottom: 12 }}>💬</Text>
+            <View style={s.emptyIconBox}>
+              <Ionicons name="chatbubble-ellipses-outline" size={40} color="#D1D5DB" />
+            </View>
             <Text style={s.emptyTitle}>Démarrez la conversation</Text>
-            <Text style={s.emptySub}>Tapez un message ou maintenez 🎤 pour un vocal</Text>
+            <Text style={s.emptySub}>Tapez un message ou maintenez le micro pour un vocal</Text>
           </View>
         )}
         renderItem={renderMsg}
         showsVerticalScrollIndicator={false}
       />
 
-      {/* ── Barre de saisie ── */}
       <View style={s.inputBar}>
-
-        {/* Zone texte / indicateur enregistrement */}
         {isRecording ? (
           <View style={s.recordingBar}>
             <Animated.View style={[s.recDot, { transform: [{ scale: recPulse }] }]} />
@@ -384,7 +316,6 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* Bouton micro */}
         <Animated.View style={{ transform: [{ scale: recPulse }] }}>
           <TouchableOpacity
             style={[s.micBtn, isRecording && s.micBtnActive]}
@@ -393,22 +324,24 @@ export default function ChatScreen() {
             delayLongPress={200}
             activeOpacity={0.75}
           >
-            <Text style={s.micIcon}>{isRecording ? '🔴' : '🎤'}</Text>
+            <Ionicons
+              name={isRecording ? 'radio-button-on' : 'mic-outline'}
+              size={20}
+              color={isRecording ? C.error : C.muted}
+            />
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Bouton envoyer (masqué pendant enregistrement) */}
         {!isRecording && (
           <TouchableOpacity
-            style={[s.sendBtn, { backgroundColor: myAccent },
-              (!inputText.trim() || sending) && s.sendDisabled]}
+            style={[s.sendBtn, (!inputText.trim() || sending) && s.sendDisabled]}
             onPress={sendMessage}
             disabled={!inputText.trim() || sending}
             activeOpacity={0.85}
           >
             {sending
-              ? <ActivityIndicator color="white" size="small" />
-              : <Text style={s.sendIcon}>↑</Text>}
+              ? <ActivityIndicator color="#FFFFFF" size="small" />
+              : <Ionicons name="arrow-up" size={20} color="#FFFFFF" />}
           </TouchableOpacity>
         )}
       </View>
@@ -416,64 +349,50 @@ export default function ChatScreen() {
   );
 }
 
-// ── Styles bulles ────────────────────────────────────────────
 const b = StyleSheet.create({
   row:         { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4, gap: 8 },
   rowMe:       { flexDirection: 'row-reverse' },
-  avatar:      { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EBF5FF', alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  avatarTxt:   { fontSize: 11, fontWeight: '900', color: '#1A56DB' },
-  senderName:  { fontSize: 11, fontWeight: '700', color: '#64748B', marginLeft: 4, marginBottom: 3 },
-
-  // Bulle commune
+  avatar:      { width: 32, height: 32, borderRadius: 16, backgroundColor: C.accentLight, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  avatarTxt:   { fontSize: 11, fontWeight: '900', color: C.accent },
+  senderName:  { fontSize: 11, fontWeight: '700', color: C.muted, marginLeft: 4, marginBottom: 3 },
   bubble:      { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, elevation: 1 },
   bubbleMe:    { borderBottomRightRadius: 4 },
-  bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' },
-  bubbleTxt:   { fontSize: 15, color: '#1E293B', lineHeight: 21 },
-
-  // Bulle vocale
+  bubbleOther: { backgroundColor: C.bg, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: C.border },
+  bubbleTxt:   { fontSize: 15, color: C.text, lineHeight: 21 },
   voiceBubble: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, minWidth: 180 },
   playCircle:  { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   waveform:    { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2 },
   bar:         { width: 2.5, borderRadius: 2 },
   voiceDur:    { fontSize: 11, fontWeight: '700', minWidth: 30, textAlign: 'right' },
-
-  // Timestamps
-  time:        { fontSize: 10, color: '#94A3B8', marginTop: 3, marginLeft: 4 },
+  time:        { fontSize: 10, color: C.muted, marginTop: 3, marginLeft: 4 },
   timeMe:      { textAlign: 'right', marginRight: 4, marginLeft: 0 },
 });
 
 const s = StyleSheet.create({
-  header:       { paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12, paddingBottom: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backBtn:      { paddingVertical: 4 },
-  backTxt:      { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' },
+  header:       { backgroundColor: C.primary, paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12, paddingBottom: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn:      { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1 },
   nameRow:      { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
   onlineDot:    { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ADE80' },
-  headerName:   { fontSize: 16, fontWeight: '900', color: 'white' },
-  headerRoute:  { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
+  headerName:   { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
+  headerRoute:  { fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
 
-  banner:       { position: 'absolute', top: Platform.OS === 'ios' ? 100 : (StatusBar.currentHeight || 24) + 70, left: 12, right: 12, zIndex: 100, backgroundColor: 'rgba(30,41,59,0.92)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
-  bannerTxt:    { color: 'white', fontSize: 13, fontWeight: '700', lineHeight: 19 },
+  banner:       { position: 'absolute', top: Platform.OS === 'ios' ? 100 : (StatusBar.currentHeight || 24) + 70, left: 12, right: 12, zIndex: 100, backgroundColor: 'rgba(10,10,10,0.92)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, elevation: 12, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
+  bannerTxt:    { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 19, flex: 1 },
 
-  empty:        { alignItems: 'center', paddingTop: 80 },
-  emptyTitle:   { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 6 },
-  emptySub:     { fontSize: 13, color: '#64748B', textAlign: 'center' },
+  empty:        { alignItems: 'center', paddingTop: 80, gap: 12 },
+  emptyIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center' },
+  emptyTitle:   { fontSize: 18, fontWeight: '800', color: C.text },
+  emptySub:     { fontSize: 13, color: C.muted, textAlign: 'center', paddingHorizontal: 24, lineHeight: 19 },
 
-  // Barre de saisie
-  inputBar:     { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingVertical: 8, gap: 8, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingBottom: Platform.OS === 'ios' ? 28 : 8 },
-  input:        { flex: 1, backgroundColor: '#F8FAFC', borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, color: '#1E293B', maxHeight: 120 },
-
-  // Indicateur enregistrement
-  recordingBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF2F2', borderRadius: 22, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1.5, borderColor: '#FECACA' },
-  recDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: '#DC2626' },
-  recTimer:     { fontSize: 15, fontWeight: '900', color: '#DC2626', marginLeft: 8 },
-  recHint:      { fontSize: 12, color: '#94A3B8', flex: 1 },
-
-  // Boutons
-  micBtn:       { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#E2E8F0' },
-  micBtnActive: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
-  micIcon:      { fontSize: 20 },
-  sendBtn:      { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
+  inputBar:     { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingVertical: 8, gap: 8, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border, paddingBottom: Platform.OS === 'ios' ? 28 : 8 },
+  input:        { flex: 1, backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, color: C.text, maxHeight: 120 },
+  recordingBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, borderRadius: 22, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1.5, borderColor: '#FECACA' },
+  recDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: C.error },
+  recTimer:     { fontSize: 15, fontWeight: '900', color: C.error, marginLeft: 8 },
+  recHint:      { fontSize: 12, color: C.muted, flex: 1 },
+  micBtn:       { width: 44, height: 44, borderRadius: 22, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border },
+  micBtnActive: { backgroundColor: C.errorLight, borderColor: '#FECACA' },
+  sendBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
   sendDisabled: { opacity: 0.35 },
-  sendIcon:     { fontSize: 20, color: 'white', fontWeight: '900', lineHeight: 24 },
 });

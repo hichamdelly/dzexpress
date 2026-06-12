@@ -16,12 +16,14 @@ const NOMS = [
 
 const TEL_PREFIXES = ['0550', '0560', '0770', '0780', '0540', '0670', '0659', '0551', '0661'];
 
-// ── Distribution pondérée des véhicules (fourgon le plus courant) ─
+// ── Distribution pondérée des véhicules ──────────────────────
 const VEHICULES_POIDS = [
-  { key: 'fourgon',  poids: 50 },
-  { key: 'camion35', poids: 25 },
-  { key: 'camion10', poids: 15 },
-  { key: 'semi',     poids: 10 },
+  { key: 'herbine',    poids: 15 },
+  { key: 'utilitaire', poids: 20 },
+  { key: 'fourgon',    poids: 35 },
+  { key: 'camion35',   poids: 18 },
+  { key: 'camion10',   poids: 8  },
+  { key: 'semi',       poids: 4  },
 ];
 
 function rnd(min, max)    { return min + Math.random() * (max - min); }

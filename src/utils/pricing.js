@@ -1,10 +1,12 @@
 // ── Moteur de tarification dynamique DzExpress ───────────────
 
 export const TARIFS_BASE = {
-  fourgon:  { perKm: 45,  priseEnCharge: 500,  label: 'Fourgon',       icon: '🚐' },
-  camion35: { perKm: 65,  priseEnCharge: 800,  label: 'Camion 3.5T',   icon: '🚛' },
-  camion10: { perKm: 90,  priseEnCharge: 1200, label: 'Camion 10T',    icon: '🚚' },
-  semi:     { perKm: 130, priseEnCharge: 2000, label: 'Semi-remorque', icon: '🏗️' },
+  herbine:   { perKm: 18,  priseEnCharge: 200,  label: 'Herbine',         icon: 'cart-outline' },
+  utilitaire:{ perKm: 30,  priseEnCharge: 350,  label: 'Utilitaire léger',icon: 'car-outline' },
+  fourgon:   { perKm: 45,  priseEnCharge: 500,  label: 'Fourgon',         icon: 'car-sport-outline' },
+  camion35:  { perKm: 65,  priseEnCharge: 800,  label: 'Camion 3.5T',     icon: 'bus-outline' },
+  camion10:  { perKm: 90,  priseEnCharge: 1200, label: 'Camion 10T',      icon: 'cube-outline' },
+  semi:      { perKm: 130, priseEnCharge: 2000, label: 'Semi-remorque',   icon: 'construct-outline' },
 };
 
 // Jours fériés fixes (MM-DD)

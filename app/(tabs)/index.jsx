@@ -5,15 +5,16 @@ import {
   Alert, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '../../src/context/AppContext';
 import { demandesDB } from '../../src/db/database';
 import { getDistanceKm, fmtKm, WILAYA_COORDS } from '../../src/utils/wilayas';
 import { calculerPrix, calculerSurge, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
 import CityInput from '../../src/components/CityInput';
+import { useReservation } from '../../src/context/ReservationContext';
 
-// ── Haversine local (évite de ré-exporter depuis wilayas.js) ──
 function _haversine(lat1, lng1, lat2, lng2) {
   const R = 6371, toR = d => d * Math.PI / 180;
   const a =
@@ -23,7 +24,6 @@ function _haversine(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Trouve la wilaya la plus proche d'un point GPS (parmi les 48 canoniques)
 function nearestWilaya(lat, lng, canonicalList) {
   let best = null, bestDist = Infinity;
   for (const name of canonicalList) {
@@ -36,21 +36,12 @@ function nearestWilaya(lat, lng, canonicalList) {
 }
 
 const C = {
-  blue:        '#1A56DB',
-  blueLight:   '#EBF5FF',
-  blueDark:    '#1E40AF',
-  orange:      '#F97316',
-  orangeLight: '#FFF7ED',
-  bg:          '#F8FAFC',
-  white:       '#FFFFFF',
-  text:        '#1E293B',
-  muted:       '#64748B',
-  border:      '#E2E8F0',
-  green:       '#16A34A',
-  greenLight:  '#F0FDF4',
-  yellow:      '#D97706',
-  yellowLight: '#FFFBEB',
-  red:         '#DC2626',
+  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
+  muted: '#6B7280', border: '#E5E7EB',
+  success: '#10B981', successLight: '#ECFDF5',
+  error: '#EF4444', errorLight: '#FEF2F2',
+  warning: '#F59E0B', warningLight: '#FFFBEB',
 };
 
 const WILAYAS = [
@@ -66,56 +57,124 @@ const WILAYAS = [
 ];
 
 const TYPES_MARCHANDISE = [
-  { key: 'meubles',        label: 'Meubles',         icon: '🪑' },
-  { key: 'electromenager', label: 'Électroménager',  icon: '📺' },
-  { key: 'cartons',        label: 'Cartons',          icon: '📦' },
-  { key: 'materiaux',      label: 'Matériaux BTP',    icon: '🧱' },
-  { key: 'vehicule',       label: 'Véhicule',         icon: '🚗' },
-  { key: 'autre',          label: 'Autre',            icon: '🔧' },
+  { key: 'meubles',        label: 'Meubles',        icon: 'grid-outline' },
+  { key: 'electromenager', label: 'Électroménager', icon: 'tv-outline' },
+  { key: 'cartons',        label: 'Cartons',         icon: 'cube-outline' },
+  { key: 'alimentation',   label: 'Alimentation',   icon: 'basket-outline' },
+  { key: 'materiaux',      label: 'Matériaux BTP',   icon: 'construct-outline' },
+  { key: 'vehicule',       label: 'Véhicule',        icon: 'car-outline' },
+  { key: 'autre',          label: 'Autre',           icon: 'ellipsis-horizontal-circle-outline' },
 ];
 
 const CRENEAUX = [
-  { key: 'matin',      label: 'Matin',       sub: '06h – 12h', icon: '🌅' },
-  { key: 'apres-midi', label: 'Après-midi',  sub: '12h – 18h', icon: '☀️' },
-  { key: 'soir',       label: 'Soir',        sub: '18h – 22h', icon: '🌆' },
-  { key: 'flexible',   label: 'Flexible',    sub: 'Peu importe', icon: '🕐' },
+  { key: 'matin',      label: 'Matin',      sub: '06h – 12h',   icon: 'sunny-outline' },
+  { key: 'apres-midi', label: 'Après-midi', sub: '12h – 18h',   icon: 'partly-sunny-outline' },
+  { key: 'soir',       label: 'Soir',       sub: '18h – 22h',   icon: 'moon-outline' },
+  { key: 'flexible',   label: 'Flexible',   sub: 'Peu importe', icon: 'time-outline' },
 ];
 
-// CityPicker remplacé par CityInput (src/components/CityInput.jsx)
+const SOUS_CATEGORIES = {
+  meubles: [
+    { key: 'lit',       label: 'Lit',              veh: 'fourgon' },
+    { key: 'canape',    label: 'Canapé',            veh: 'fourgon' },
+    { key: 'armoire',   label: 'Armoire',           veh: 'camion35' },
+    { key: 'table',     label: 'Table & Chaises',   veh: 'fourgon' },
+    { key: 'salon',     label: 'Salon complet',     veh: 'camion35' },
+    { key: 'appart',    label: 'Tout l\'appart',    veh: 'camion35', warn: 'Un déménagement complet nécessite généralement un camion 3.5T. Prévoir 2–3h de chargement minimum.' },
+  ],
+  electromenager: [
+    { key: 'frigo',     label: 'Réfrigérateur',     veh: 'fourgon' },
+    { key: 'machine',   label: 'Machine à laver',   veh: 'fourgon' },
+    { key: 'clim',      label: 'Climatiseur',       veh: 'fourgon' },
+    { key: 'tv',        label: 'TV / Écran',        veh: 'fourgon' },
+    { key: 'plusieurs', label: 'Plusieurs gros appareils', veh: 'camion35' },
+  ],
+  cartons: [
+    { key: 'petit',     label: '< 10 cartons',      veh: 'fourgon' },
+    { key: 'moyen',     label: '10 – 30 cartons',   veh: 'fourgon' },
+    { key: 'grand',     label: '> 30 cartons',      veh: 'camion35' },
+  ],
+  alimentation: [
+    { key: 'fruits_legumes', label: 'Fruits & Légumes (cageots)', veh: ['herbine', 'utilitaire'] },
+    { key: 'epicerie',       label: 'Produits alimentaires',       veh: 'utilitaire' },
+    { key: 'vrac_alim',      label: 'Grande quantité',            veh: 'fourgon' },
+    { key: 'surgeles',       label: 'Surgelés / Réfrigérés',      veh: 'fourgon',
+      warn: 'Les produits surgelés nécessitent un véhicule frigorifique. Mentionne cette exigence dans la description pour filtrer les transporteurs équipés.' },
+  ],
+  materiaux: [
+    { key: 'sable',     label: 'Sable / Gravier',   veh: 'camion10', warn: 'Le sable et gravier en vrac nécessitent un camion benne 10T minimum. Précise la quantité en tonnes.' },
+    { key: 'briques',   label: 'Briques / Parpaings', veh: 'camion10' },
+    { key: 'fer',       label: 'Fer à béton',        veh: 'camion35', warn: 'Le fer à béton est long et lourd — précise absolument les dimensions dans la description.' },
+    { key: 'carrelage', label: 'Carrelage',           veh: 'fourgon' },
+    { key: 'autre_btp', label: 'Autre BTP',           veh: 'camion35' },
+  ],
+  vehicule: [
+    { key: 'voiture',   label: 'Voiture',            veh: 'semi', warn: 'Le transport de voitures nécessite un plateau ou semi-remorque équipé. Vérifie que le transporteur dispose du matériel adéquat.' },
+    { key: 'moto',      label: 'Moto / Scooter',     veh: 'fourgon' },
+    { key: 'camion_l',  label: 'Camion léger',       veh: 'semi', warn: 'Pour les véhicules lourds, assure-toi que le transporteur possède un plateau homologué.' },
+  ],
+  autre: [],
+};
+
+const VEH_LABELS = {
+  herbine:    'Herbine',
+  utilitaire: 'Utilitaire léger',
+  fourgon:    'Fourgon',
+  camion35:   'Camion 3.5T',
+  camion10:   'Camion 10T',
+  semi:       'Semi-remorque / Plateau',
+};
+const VEH_ICONS = {
+  herbine:    'cart-outline',
+  utilitaire: 'car-outline',
+  fourgon:    'car-sport-outline',
+  camion35:   'bus-outline',
+  camion10:   'cube-outline',
+  semi:       'construct-outline',
+};
+
+function Logo() {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={ls.badge}><Text style={ls.dz}>Dz</Text></View>
+      <Text style={ls.express}>Express</Text>
+    </View>
+  );
+}
+const ls = StyleSheet.create({
+  badge:   { backgroundColor: C.accent, borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
+  dz:      { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  express: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+});
 
 // ════════════════════════════════════════════════════════════
 // ── EXPÉDITEUR ───────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════
 function ExpéditeurHome({ user }) {
   const router = useRouter();
+  const { setField } = useReservation();
 
-  // Mode : 'maintenant' | 'planifie'
-  const [mode, setMode]       = useState('maintenant');
+  const [mode, setMode]           = useState('instantane');
+  const [depart, setDepart]       = useState('');
+  const [arrivee, setArrivee]     = useState('');
+  const [type, setType]           = useState('');
+  const [poids, setPoids]         = useState('');
+  const [desc, setDesc]           = useState('');
+  const [date, setDate]           = useState(null);
+  const [heure, setHeure]         = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [saving, setSaving]       = useState(false);
 
-  // Champs communs
-  const [depart, setDepart]   = useState('');
-  const [arrivee, setArrivee] = useState('');
-  const [type, setType]       = useState('');
-  const [poids, setPoids]     = useState('');
-  const [desc, setDesc]       = useState('');
-
-  // Champs "Planifier"
-  const [date, setDate]       = useState(null);
-  const [creneau, setCreneau] = useState('flexible');
-  const [showDate, setShowDate] = useState(false);
-
-  const [saving, setSaving]   = useState(false);
-
-  // ── Options supplémentaires & tarification ──────────────────
-  const [etages,   setEtages]   = useState(0);
-  const [aide,     setAide]     = useState(false);
-  const [fragile,  setFragile]  = useState(false);
-  const [express,  setExpress]  = useState(false);
+  const [etages,  setEtages]  = useState(0);
+  const [aide,    setAide]    = useState(false);
+  const [fragile, setFragile] = useState(false);
+  const [express, setExpress] = useState(false);
   const [showPrixDetail, setShowPrixDetail] = useState(false);
 
-  // ── Géolocalisation départ ──────────────────────────────────
+  const [sousCategorie, setSousCategorie] = useState('');
+
   const [gpsLoading, setGpsLoading] = useState(false);
-  // Clé incrémentale pour forcer le remontage du CityInput après remplissage GPS
   const [gpsKey, setGpsKey]         = useState(0);
 
   const detectPosition = async () => {
@@ -123,119 +182,61 @@ function ExpéditeurHome({ user }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission refusée',
-          'Active la localisation dans les paramètres pour utiliser cette fonctionnalité.'
-        );
+        Alert.alert('Permission refusée', 'Active la localisation dans les paramètres.');
         return;
       }
-
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const { latitude, longitude } = pos.coords;
-      const wilaya = nearestWilaya(latitude, longitude, WILAYAS);
-
-      if (wilaya) {
-        setDepart(wilaya);
-        // Force le remontage du CityInput pour afficher la nouvelle valeur
-        setGpsKey(k => k + 1);
-      } else {
-        Alert.alert('Position introuvable', 'Impossible de détecter ta wilaya. Saisis-la manuellement.');
-      }
+      const pos     = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const wilaya  = nearestWilaya(pos.coords.latitude, pos.coords.longitude, WILAYAS);
+      if (wilaya) { setDepart(wilaya); setGpsKey(k => k + 1); }
+      else Alert.alert('Position introuvable', 'Saisis ta ville manuellement.');
     } catch {
-      Alert.alert(
-        'Géolocalisation échouée',
-        'Vérifie que le GPS est activé et réessaie, ou saisis ta ville manuellement.'
-      );
+      Alert.alert('GPS échoué', 'Vérifie que le GPS est activé.');
     } finally {
       setGpsLoading(false);
     }
   };
-  // ────────────────────────────────────────────────────────────
+
+  const getCreneau = (h) => {
+    if (!h) return 'flexible';
+    const hr = h.getHours();
+    if (hr >= 6  && hr < 12) return 'matin';
+    if (hr >= 12 && hr < 18) return 'apres-midi';
+    if (hr >= 18 && hr < 22) return 'soir';
+    return 'flexible';
+  };
+
+  const fmtHeureLabel = (h) => h
+    ? h.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   const reset = () => {
-    setDepart(''); setArrivee(''); setType('');
-    setPoids(''); setDesc(''); setDate(null); setCreneau('flexible');
+    setDepart(''); setArrivee(''); setType(''); setSousCategorie('');
+    setPoids(''); setDesc(''); setDate(null); setHeure(null);
     setEtages(0); setAide(false); setFragile(false); setExpress(false);
     setGpsKey(k => k + 1);
   };
 
-  // Mode Maintenant → ouvre la carte des transporteurs
   const ouvrirCarte = () => {
-    if (!depart)  return Alert.alert('Requis', 'Choisis la ville de départ.');
-    if (!arrivee) return Alert.alert('Requis', 'Choisis la ville d\'arrivée.');
-    if (!type)    return Alert.alert('Requis', 'Choisis le type de marchandise.');
-    router.push({
-      pathname: '/carte-transporteurs',
-      params: { depart, arrivee, type, poids: poids.trim(), desc: desc.trim() },
-    });
+    setField('mode', 'instantane');
+    router.push('/reservation/depart-arrivee');
   };
 
-  // Mode Planifié → publie directement dans la marketplace
-  const handlePublier = async () => {
-    if (!depart)  return Alert.alert('Requis', 'Choisis la ville de départ.');
-    if (!arrivee) return Alert.alert('Requis', 'Choisis la ville d\'arrivée.');
-    if (!type)    return Alert.alert('Requis', 'Choisis le type de marchandise.');
-    if (!date)    return Alert.alert('Requis', 'Choisis la date souhaitée.');
-
-    setSaving(true);
-    try {
-      const fmtDate = (d) => {
-        const j = String(d.getDate()).padStart(2, '0');
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        return `${j}/${m}/${d.getFullYear()}`;
-      };
-      const km          = getDistanceKm(depart, arrivee);
-      const nbActives   = demandesDB.countActives();
-      const estimation  = km ? calculerPrix(km, 'fourgon', { etages, aide, fragile, express, nbActives }) : null;
-      const optsJson    = JSON.stringify({ etages, aide, fragile, express });
-
-      demandesDB.create({
-        expediteur_id:           user.id,
-        ville_depart:            depart,
-        ville_arrivee:           arrivee,
-        type_marchandise:        type,
-        poids:                   poids.trim() || null,
-        description:             desc.trim() || null,
-        type_demande:            'planifie',
-        date_souhaitee:          fmtDate(date),
-        creneau,
-        prix_estime:             estimation?.min ?? null,
-        surge_coefficient:       estimation?.surgeCoefficient ?? null,
-        options_supplementaires: optsJson,
-      });
-      reset();
-      Alert.alert(
-        '📅 Demande planifiée publiée !',
-        'Les transporteurs peuvent maintenant voir ta demande et faire des offres.',
-        [{ text: 'Voir mes demandes', onPress: () => router.push('/(tabs)/suivi') }]
-      );
-    } catch (e) {
-      Alert.alert('Erreur', e.message);
-    } finally {
-      setSaving(false);
-    }
+  const handlePublier = () => {
+    setField('mode', 'planifie');
+    router.push('/reservation/depart-arrivee');
   };
 
-  const fmtDate = (d) => d
+  const fmtDateLabel = (d) => d
     ? d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
     : null;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {/* Header */}
-      <View style={[s.header, { backgroundColor: C.orange }]}>
-        <View style={s.headerLeft}>
-          <View style={s.logoBubble}><Text style={{ fontSize: 22 }}>🚛</Text></View>
-          <View>
-            <Text style={s.appName}>DzExpress</Text>
-            <Text style={s.appSub}>📦 Expéditeur</Text>
-          </View>
-        </View>
-        <View style={[s.roleBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-          <Text style={[s.roleBadgeTxt, { color: 'white' }]}>📦</Text>
+      <View style={s.header}>
+        <Logo />
+        <View style={s.headerBadge}>
+          <Ionicons name="cube-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+          <Text style={s.headerBadgeTxt}>Expéditeur</Text>
         </View>
       </View>
 
@@ -245,84 +246,65 @@ function ExpéditeurHome({ user }) {
         contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
       >
         <View style={s.formCard}>
-          {/* ── Toggle Maintenant / Planifier ── */}
-          <View style={s.modeToggle}>
+          {/* Sélecteur mode */}
+          <Text style={s.whenTitle}>Quand avez-vous besoin du transport ?</Text>
+          <View style={s.modeCards}>
             <TouchableOpacity
-              style={[s.modeBtn, mode === 'maintenant' && s.modeBtnUrgent]}
-              onPress={() => setMode('maintenant')}
-              activeOpacity={0.85}
+              style={[s.modeCard, mode === 'instantane' && s.modeCardActive]}
+              onPress={() => setMode('instantane')} activeOpacity={0.85}
             >
-              <Text style={[s.modeIcon, mode === 'maintenant' && { color: 'white' }]}>🚀</Text>
-              <Text style={[s.modeBtnTxt, mode === 'maintenant' && { color: 'white', fontWeight: '900' }]}>
-                Maintenant
-              </Text>
-              <Text style={[s.modeBtnSub, mode === 'maintenant' && { color: 'rgba(255,255,255,0.8)' }]}>
-                Urgent
-              </Text>
+              <Ionicons name="flash" size={22} color={mode === 'instantane' ? '#FFFFFF' : C.muted} />
+              <Text style={[s.modeCardTitle, mode === 'instantane' && { color: '#FFFFFF' }]}>Maintenant</Text>
+              <Text style={[s.modeCardSub, mode === 'instantane' && { color: 'rgba(255,255,255,0.6)' }]}>Choix direct du transporteur</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
-              style={[s.modeBtn, mode === 'planifie' && s.modeBtnPlanifie]}
-              onPress={() => setMode('planifie')}
-              activeOpacity={0.85}
+              style={[s.modeCard, mode === 'planifie' && s.modeCardActive]}
+              onPress={() => { setMode('planifie'); }} activeOpacity={0.85}
             >
-              <Text style={[s.modeIcon, mode === 'planifie' && { color: 'white' }]}>📅</Text>
-              <Text style={[s.modeBtnTxt, mode === 'planifie' && { color: 'white', fontWeight: '900' }]}>
-                Planifier
-              </Text>
-              <Text style={[s.modeBtnSub, mode === 'planifie' && { color: 'rgba(255,255,255,0.8)' }]}>
-                Choisir une date
-              </Text>
+              <Ionicons name="calendar-outline" size={22} color={mode === 'planifie' ? '#FFFFFF' : C.muted} />
+              <Text style={[s.modeCardTitle, mode === 'planifie' && { color: '#FFFFFF' }]}>Choisir une heure</Text>
+              <Text style={[s.modeCardSub, mode === 'planifie' && { color: 'rgba(255,255,255,0.6)' }]}>Publier pour recevoir des offres</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Bandeau urgence */}
-          {mode === 'maintenant' && (
+          {mode === 'instantane' && (
             <View style={s.urgenceBanner}>
+              <Ionicons name="flash" size={14} color={C.error} style={{ marginRight: 6 }} />
               <Text style={s.urgenceTxt}>
-                🚀 Ta demande sera marquée <Text style={{ fontWeight: '900' }}>URGENT</Text> — les transporteurs disponibles la verront en priorité !
+                Ta demande sera marquée <Text style={{ fontWeight: '900' }}>URGENT</Text> — les transporteurs la verront en priorité
               </Text>
             </View>
           )}
 
-          <Text style={[s.formTitle, { marginTop: 8 }]}>Nouvelle demande</Text>
+          <Text style={s.formTitle}>Nouvelle demande</Text>
           <Text style={s.formSub}>
-            {mode === 'maintenant'
-              ? 'Transport à effectuer dès aujourd\'hui'
-              : 'Transport à une date choisie'}
+            {mode === 'instantane' ? 'Transport à effectuer dès maintenant' : 'Planifie à la date et l\'heure souhaitées'}
           </Text>
 
           {/* Route */}
           <View style={s.routeBlock}>
-
-            {/* ── Départ + bouton GPS ── */}
             <View style={s.gpsLabelRow}>
-              <Text style={s.label}>Ville de départ *</Text>
+              <Text style={s.fieldLabel}>Ville de départ</Text>
               <TouchableOpacity
-                style={[
-                  s.gpsBtn,
-                  { borderColor: mode === 'maintenant' ? C.red : C.blue },
-                  gpsLoading && s.gpsBtnLoading,
-                ]}
-                onPress={detectPosition}
-                disabled={gpsLoading}
-                activeOpacity={0.8}
+                style={[s.gpsBtn, gpsLoading && { opacity: 0.6 }]}
+                onPress={detectPosition} disabled={gpsLoading}
               >
                 {gpsLoading
-                  ? <ActivityIndicator size="small" color={mode === 'maintenant' ? C.red : C.blue} />
-                  : <Text style={[s.gpsBtnTxt, { color: mode === 'maintenant' ? C.red : C.blue }]}>
-                      📍 Ma position
-                    </Text>
+                  ? <ActivityIndicator size="small" color={C.accent} />
+                  : <>
+                      <Ionicons name="locate-outline" size={13} color={C.accent} />
+                      <Text style={s.gpsBtnTxt}>Ma position</Text>
+                    </>
                 }
               </TouchableOpacity>
             </View>
 
-            {/* Indicateur wilaya détectée */}
             {depart && gpsKey > 0 && (
               <View style={s.gpsFillBadge}>
-                <Text style={s.gpsFillTxt}>📍 {depart}</Text>
+                <Ionicons name="location" size={14} color={C.success} style={{ marginRight: 6 }} />
+                <Text style={s.gpsFillTxt}>{depart}</Text>
                 <TouchableOpacity onPress={() => { setDepart(''); setGpsKey(k => k + 1); }}>
-                  <Text style={s.gpsClearTxt}>✕</Text>
+                  <Ionicons name="close-circle" size={17} color="#9CA3AF" />
                 </TouchableOpacity>
               </View>
             )}
@@ -331,86 +313,81 @@ function ExpéditeurHome({ user }) {
               key={`depart-${gpsKey}`}
               value={depart}
               onChange={setDepart}
-              accentColor={mode === 'maintenant' ? C.red : C.blue}
+              accentColor={C.accent}
               zIndex={20}
               placeholder="Commune ou wilaya de départ…"
             />
 
             <View style={s.routeDivider}>
               <View style={s.routeLine} />
-              <Text style={[s.routeArrow, { color: mode === 'maintenant' ? C.red : C.blue }]}>↓</Text>
+              <View style={s.routeIconBox}>
+                <Ionicons name="arrow-down" size={14} color={C.muted} />
+              </View>
               <View style={s.routeLine} />
             </View>
 
-            <Text style={[s.label, { marginTop: 4 }]}>Ville d'arrivée *</Text>
+            <Text style={s.fieldLabel}>Ville d'arrivée</Text>
             <CityInput
               value={arrivee}
               onChange={setArrivee}
-              accentColor={mode === 'maintenant' ? C.red : C.blue}
+              accentColor={C.accent}
               zIndex={19}
               placeholder="Commune ou wilaya d'arrivée…"
             />
           </View>
 
-          {/* ── Widget estimation de prix ── */}
+          {/* Widget estimation de prix */}
           {depart && arrivee && (() => {
-            const km = getDistanceKm(depart, arrivee);
+            const km    = getDistanceKm(depart, arrivee);
             if (!km) return null;
-            const nbActives = demandesDB.countActives();
-            const surge     = calculerSurge(nbActives);
-            const opts      = { etages, aide, fragile, express, nbActives };
-            const estims    = Object.entries(TARIFS_BASE).map(([veh]) => ({
-              veh,
-              px: calculerPrix(km, veh, opts),
-            }));
+            const nbAct = demandesDB.countActives();
+            const surge = calculerSurge(nbAct);
+            const opts  = { etages, aide, fragile, express, nbActives: nbAct };
+            const estims = Object.entries(TARIFS_BASE).map(([veh]) => ({ veh, px: calculerPrix(km, veh, opts) }));
             const fourgon = estims[0].px;
             return (
               <View style={px.box}>
                 <View style={px.headerRow}>
-                  <Text style={px.title}>💰 Estimation de prix</Text>
+                  <Ionicons name="wallet-outline" size={14} color={C.success} style={{ marginRight: 6 }} />
+                  <Text style={px.title}>Estimation de prix</Text>
                   {surge.isForteDemande && (
-                    <View style={px.surgeBadge}><Text style={px.surgeTxt}>🔥 Forte demande</Text></View>
+                    <View style={px.surgeBadge}>
+                      <Ionicons name="flame" size={10} color={C.error} style={{ marginRight: 3 }} />
+                      <Text style={px.surgeTxt}>Forte demande</Text>
+                    </View>
                   )}
                 </View>
-
                 {surge.label && (
                   <View style={px.surgeRow}>
-                    <Text style={px.surgeLabel}>⚡ {surge.label} (+{surge.pct}%)</Text>
+                    <Ionicons name="flash" size={12} color={C.accent} style={{ marginRight: 5 }} />
+                    <Text style={px.surgeLabel}>{surge.label} (+{surge.pct}%)</Text>
                   </View>
                 )}
-
                 {estims.map(({ veh, px: p }) => (
                   <View key={veh} style={px.row}>
-                    <Text style={px.vehTxt}>{TARIFS_BASE[veh].icon} {TARIFS_BASE[veh].label}</Text>
+                    <Text style={px.vehTxt}>{TARIFS_BASE[veh].label}</Text>
                     <Text style={px.rangeTxt}>{fmtPrix(p.min)} – {fmtPrix(p.max)}</Text>
                   </View>
                 ))}
-
                 <TouchableOpacity style={px.detailBtn} onPress={() => setShowPrixDetail(v => !v)}>
-                  <Text style={px.detailBtnTxt}>{showPrixDetail ? '▲' : '▼'} Voir le détail du calcul</Text>
+                  <Ionicons name={showPrixDetail ? 'chevron-up' : 'chevron-down'} size={12} color={C.success} style={{ marginRight: 4 }} />
+                  <Text style={px.detailBtnTxt}>Voir le détail du calcul</Text>
                 </TouchableOpacity>
-
                 {showPrixDetail && (
                   <View style={px.detail}>
-                    <Text style={px.detailLine}>📏 {fourgon.detail.km} km × {fourgon.detail.tarifKm} DA/km</Text>
-                    <Text style={px.detailLine}>+ Prise en charge : {fmtPrix(fourgon.detail.priseEnCharge)}</Text>
-                    <Text style={px.detailLine}>= Base : {fmtPrix(fourgon.detail.baseAvantSurge)}</Text>
+                    <Text style={px.detailLine}>{fourgon.detail.km} km × {fourgon.detail.tarifKm} DA/km</Text>
+                    <Text style={px.detailLine}>Prise en charge : {fmtPrix(fourgon.detail.priseEnCharge)}</Text>
+                    <Text style={px.detailLine}>Base : {fmtPrix(fourgon.detail.baseAvantSurge)}</Text>
                     {fourgon.detail.surgePct > 0 && (
-                      <Text style={[px.detailLine, { color: '#F97316' }]}>⚡ Surge × {(fourgon.surgeCoefficient).toFixed(2)} (+{fourgon.detail.surgePct}%)</Text>
+                      <Text style={[px.detailLine, { color: C.accent }]}>Surge ×{fourgon.surgeCoefficient.toFixed(2)} (+{fourgon.detail.surgePct}%)</Text>
                     )}
                     {fourgon.detail.fraisEtages > 0 && (
-                      <Text style={px.detailLine}>🏢 Étages : +{fmtPrix(fourgon.detail.fraisEtages)}</Text>
+                      <Text style={px.detailLine}>Étages : +{fmtPrix(fourgon.detail.fraisEtages)}</Text>
                     )}
-                    {fourgon.detail.fraisAide > 0 && (
-                      <Text style={px.detailLine}>🤝 Aide chargement : +500 DA</Text>
-                    )}
-                    {fourgon.detail.fragile && (
-                      <Text style={px.detailLine}>📦 Fragile : +20%</Text>
-                    )}
-                    {fourgon.detail.express && (
-                      <Text style={px.detailLine}>⚡ Express : +40%</Text>
-                    )}
-                    <Text style={[px.detailLine, { fontWeight: '900', color: '#1A56DB', marginTop: 4 }]}>
+                    {fourgon.detail.fraisAide > 0 && <Text style={px.detailLine}>Aide chargement : +500 DA</Text>}
+                    {fourgon.detail.fragile && <Text style={px.detailLine}>Fragile : +20%</Text>}
+                    {fourgon.detail.express && <Text style={px.detailLine}>Express : +40%</Text>}
+                    <Text style={[px.detailLine, { fontWeight: '900', color: C.primary, marginTop: 4 }]}>
                       Total fourgon : {fmtPrix(fourgon.min)} – {fmtPrix(fourgon.max)}
                     </Text>
                   </View>
@@ -419,76 +396,185 @@ function ExpéditeurHome({ user }) {
             );
           })()}
 
-          {/* Type marchandise */}
-          <Text style={s.label}>Type de marchandise *</Text>
+          {/* Type de marchandise */}
+          <Text style={s.fieldLabel}>Type de marchandise</Text>
           <View style={s.typeGrid}>
-            {TYPES_MARCHANDISE.map(t => (
-              <TouchableOpacity
-                key={t.key}
-                style={[s.typeBtn,
-                  type === t.key && (mode === 'maintenant' ? s.typeBtnUrgent : s.typeBtnPlanifie)
-                ]}
-                onPress={() => setType(t.key)}
-                activeOpacity={0.8}
-              >
-                <Text style={{ fontSize: 24 }}>{t.icon}</Text>
-                <Text style={[s.typeTxt,
-                  type === t.key && { color: mode === 'maintenant' ? C.orange : C.blue }
-                ]}>{t.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {TYPES_MARCHANDISE.map(t => {
+              const active = type === t.key;
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[s.typeBtn, active && s.typeBtnActive]}
+                  onPress={() => { setType(t.key); setSousCategorie(''); }} activeOpacity={0.8}
+                >
+                  <Ionicons name={t.icon} size={26} color={active ? C.accent : '#9CA3AF'} />
+                  <Text style={[s.typeTxt, active && { color: C.accent, fontWeight: '700' }]}>{t.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
+          {/* Sous-catégorie */}
+          {(() => {
+            const scList = type ? SOUS_CATEGORIES[type] : null;
+            if (!scList?.length) return null;
+            const scInfo   = scList.find(s => s.key === sousCategorie);
+            const vehRec   = scInfo?.veh;
+            const vehRecArr = vehRec ? (Array.isArray(vehRec) ? vehRec : [vehRec]) : [];
+            const avertissement = scInfo?.warn;
+            return (
+              <>
+                <Text style={s.fieldLabel}>Précise le type</Text>
+                <View style={sc.chipRow}>
+                  {scList.map(sc_ => {
+                    const active = sousCategorie === sc_.key;
+                    return (
+                      <TouchableOpacity
+                        key={sc_.key}
+                        style={[sc.chip, active && sc.chipActive]}
+                        onPress={() => setSousCategorie(active ? '' : sc_.key)}
+                        activeOpacity={0.8}
+                      >
+                        {active && (
+                          <Ionicons name="checkmark-circle" size={13} color={C.accent} style={{ marginRight: 4 }} />
+                        )}
+                        <Text style={[sc.chipTxt, active && sc.chipTxtActive]}>{sc_.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {vehRecArr.length > 0 && (
+                  <View style={vr.box}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                      <Ionicons name="checkmark-circle" size={14} color={C.success} style={{ marginRight: 6 }} />
+                      <Text style={vr.title}>
+                        {vehRecArr.length > 1 ? 'Véhicules recommandés' : 'Véhicule recommandé'}
+                      </Text>
+                    </View>
+                    <View style={vr.grid}>
+                      {Object.keys(VEH_LABELS).map(key => {
+                        const isRec = vehRecArr.includes(key);
+                        return (
+                          <View key={key} style={[vr.card, isRec && vr.cardSelected]}>
+                            <Ionicons name={VEH_ICONS[key]} size={22} color={isRec ? C.accent : '#9CA3AF'} />
+                            <Text style={[vr.cardLabel, isRec && { color: C.accent, fontWeight: '800' }]}>
+                              {VEH_LABELS[key]}
+                            </Text>
+                            {isRec && (
+                              <View style={vr.recBadge}>
+                                <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                {avertissement && (
+                  <View style={wn.box}>
+                    <Ionicons name="warning-outline" size={18} color="#92400E" style={{ marginRight: 10, marginTop: 1, flexShrink: 0 }} />
+                    <Text style={wn.txt}>{avertissement}</Text>
+                  </View>
+                )}
+              </>
+            );
+          })()}
+
           {/* Poids */}
-          <Text style={s.label}>Poids estimé</Text>
+          <Text style={s.fieldLabel}>Poids estimé</Text>
           <TextInput
             style={s.input}
             placeholder="Ex : 500 kg, 2 tonnes…"
-            placeholderTextColor={C.muted}
-            value={poids}
-            onChangeText={setPoids}
+            placeholderTextColor="#9CA3AF"
+            value={poids} onChangeText={setPoids}
           />
 
-          {/* ── Section "Planifier" uniquement ── */}
+          {/* Date & Heure (mode planifie) */}
           {mode === 'planifie' && (
             <>
-              <Text style={s.label}>Date souhaitée *</Text>
-              <TouchableOpacity style={s.datePicker} onPress={() => setShowDate(true)}>
-                <Text style={{ fontSize: 22 }}>📅</Text>
-                <Text style={[s.datePickerTxt, !date && { color: C.muted }]}>
-                  {fmtDate(date) ?? 'Choisir une date'}
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={[s.label, { marginTop: 4 }]}>Créneau horaire</Text>
-              <View style={s.creneauGrid}>
-                {CRENEAUX.map(cr => (
-                  <TouchableOpacity
-                    key={cr.key}
-                    style={[s.creneauBtn, creneau === cr.key && s.creneauBtnActive]}
-                    onPress={() => setCreneau(cr.key)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={{ fontSize: 20 }}>{cr.icon}</Text>
-                    <Text style={[s.creneauTxt, creneau === cr.key && { color: C.blue, fontWeight: '800' }]}>
-                      {cr.label}
-                    </Text>
-                    <Text style={[s.creneauSub, creneau === cr.key && { color: C.blue }]}>
-                      {cr.sub}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <Text style={s.fieldLabel}>Date & heure</Text>
+              <View style={s.dtRow}>
+                <TouchableOpacity
+                  style={[s.dtBtn, date && s.dtBtnFilled]}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={date ? C.primary : '#9CA3AF'} style={{ marginRight: 7 }} />
+                  <Text style={[s.dtBtnTxt, !date && { color: '#9CA3AF' }]} numberOfLines={1}>
+                    {fmtDateLabel(date) ?? 'Choisir une date'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.dtBtn, heure && s.dtBtnFilled, { flex: 0.55 }]}
+                  onPress={() => setShowTimePicker(true)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="time-outline" size={16} color={heure ? C.primary : '#9CA3AF'} style={{ marginRight: 7 }} />
+                  <Text style={[s.dtBtnTxt, !heure && { color: '#9CA3AF' }]}>
+                    {fmtHeureLabel(heure) ?? 'Heure'}
+                  </Text>
+                </TouchableOpacity>
               </View>
+
+              {date && heure && (
+                <View style={s.dtSummary}>
+                  <Ionicons name={CRENEAUX.find(c => c.key === getCreneau(heure))?.icon || 'time-outline'} size={13} color={C.success} style={{ marginRight: 6 }} />
+                  <Text style={s.dtSummaryTxt}>
+                    {fmtDateLabel(date)} à {fmtHeureLabel(heure)} · créneau {CRENEAUX.find(c => c.key === getCreneau(heure))?.label}
+                  </Text>
+                </View>
+              )}
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={date || new Date()}
+                  mode="date"
+                  minimumDate={new Date()}
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  onChange={(evt, d) => {
+                    if (Platform.OS !== 'ios') setShowDatePicker(false);
+                    if (d) setDate(d);
+                  }}
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+              {Platform.OS === 'ios' && showDatePicker && (
+                <TouchableOpacity style={s.dtPickerDone} onPress={() => setShowDatePicker(false)}>
+                  <Text style={s.dtPickerDoneTxt}>Valider la date</Text>
+                </TouchableOpacity>
+              )}
+
+              {showTimePicker && (
+                <DateTimePicker
+                  value={heure || new Date()}
+                  mode="time"
+                  is24Hour
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(evt, d) => {
+                    if (Platform.OS !== 'ios') setShowTimePicker(false);
+                    if (d) setHeure(d);
+                  }}
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+              {Platform.OS === 'ios' && showTimePicker && (
+                <TouchableOpacity style={s.dtPickerDone} onPress={() => setShowTimePicker(false)}>
+                  <Text style={s.dtPickerDoneTxt}>Valider l'heure</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
 
-          {/* ── Options supplémentaires ── */}
-          <Text style={s.label}>Options supplémentaires</Text>
+          {/* Options supplémentaires */}
+          <Text style={s.fieldLabel}>Options</Text>
           <View style={opt.section}>
-            {/* Étages */}
             <View style={opt.row}>
+              <View style={opt.optIcon}><Ionicons name="business-outline" size={17} color={C.muted} /></View>
               <View style={{ flex: 1 }}>
-                <Text style={opt.optTitle}>🏢 Étages sans ascenseur</Text>
+                <Text style={opt.optTitle}>Étages sans ascenseur</Text>
                 <Text style={opt.optSub}>+200 DA par étage (max 5)</Text>
               </View>
               <View style={opt.counter}>
@@ -501,90 +587,97 @@ function ExpéditeurHome({ user }) {
                 </TouchableOpacity>
               </View>
             </View>
-            {/* Aide chargement */}
-            <TouchableOpacity style={opt.row} onPress={() => setAide(v => !v)} activeOpacity={0.8}>
-              <View style={{ flex: 1 }}>
-                <Text style={opt.optTitle}>🤝 Aide au chargement/déchargement</Text>
-                <Text style={opt.optSub}>+500 DA</Text>
-              </View>
-              <View style={[opt.toggle, aide && opt.toggleOn]}><View style={[opt.thumb, aide && opt.thumbOn]} /></View>
-            </TouchableOpacity>
-            {/* Fragile */}
-            <TouchableOpacity style={opt.row} onPress={() => setFragile(v => !v)} activeOpacity={0.8}>
-              <View style={{ flex: 1 }}>
-                <Text style={opt.optTitle}>📦 Marchandise fragile</Text>
-                <Text style={opt.optSub}>+20% sur le total</Text>
-              </View>
-              <View style={[opt.toggle, fragile && opt.toggleOn]}><View style={[opt.thumb, fragile && opt.thumbOn]} /></View>
-            </TouchableOpacity>
-            {/* Express */}
-            <TouchableOpacity style={[opt.row, { borderBottomWidth: 0 }]} onPress={() => setExpress(v => !v)} activeOpacity={0.8}>
-              <View style={{ flex: 1 }}>
-                <Text style={opt.optTitle}>⚡ Livraison express (&lt;2h)</Text>
-                <Text style={opt.optSub}>+40% sur le total</Text>
-              </View>
-              <View style={[opt.toggle, express && opt.toggleOn]}><View style={[opt.thumb, express && opt.thumbOn]} /></View>
-            </TouchableOpacity>
+
+            <OptionToggle
+              icon="people-outline"
+              title="Aide au chargement/déchargement"
+              sub="+500 DA"
+              value={aide} onToggle={() => setAide(v => !v)}
+            />
+            <OptionToggle
+              icon="warning-outline"
+              title="Marchandise fragile"
+              sub="+20% sur le total"
+              value={fragile} onToggle={() => setFragile(v => !v)}
+            />
+            <OptionToggle
+              icon="flash-outline"
+              title="Livraison express (<2h)"
+              sub="+40% sur le total"
+              value={express} onToggle={() => setExpress(v => !v)}
+              last
+            />
           </View>
 
           {/* Description */}
-          <Text style={s.label}>Description</Text>
+          <Text style={s.fieldLabel}>Description</Text>
           <TextInput
             style={[s.input, { minHeight: 70, textAlignVertical: 'top' }]}
-            placeholder="Détails : dimensions, fragilité, accès difficile…"
-            placeholderTextColor={C.muted}
-            value={desc}
-            onChangeText={setDesc}
-            multiline
+            placeholder="Dimensions, fragilité, accès difficile…"
+            placeholderTextColor="#9CA3AF"
+            value={desc} onChangeText={setDesc} multiline
           />
 
-          {mode === 'maintenant' ? (
-            <TouchableOpacity style={[s.submitBtn, { backgroundColor: C.red }]} onPress={ouvrirCarte} activeOpacity={0.88}>
-              <Text style={s.submitBtnTxt}>🗺️ Voir les transporteurs disponibles</Text>
-              <Text style={s.submitBtnSub}>Choisis un transporteur sur la carte</Text>
+          {mode === 'instantane' ? (
+            <TouchableOpacity style={s.submitBtn} onPress={ouvrirCarte} activeOpacity={0.88}>
+              <Ionicons name="map-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <View>
+                <Text style={s.submitBtnTxt}>Voir les transporteurs</Text>
+                <Text style={s.submitBtnSub}>Choisis sur la carte</Text>
+              </View>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[s.submitBtn, { backgroundColor: C.blue }, saving && { opacity: 0.7 }]}
-              onPress={handlePublier}
-              disabled={saving}
+              style={[s.submitBtn, saving && { opacity: 0.6 }]}
+              onPress={handlePublier} disabled={saving} activeOpacity={0.88}
             >
               {saving
-                ? <ActivityIndicator color="white" />
+                ? <ActivityIndicator color="#FFFFFF" />
                 : <>
-                    <Text style={s.submitBtnTxt}>📅 Publier dans la marketplace</Text>
-                    <Text style={s.submitBtnSub}>Les transporteurs feront des offres</Text>
+                    <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <View>
+                      <Text style={s.submitBtnTxt}>Publier dans la marketplace</Text>
+                      <Text style={s.submitBtnSub}>Les transporteurs feront des offres</Text>
+                    </View>
                   </>
               }
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Info */}
+        {/* Comment ça marche */}
         <View style={s.infoBox}>
           <Text style={s.infoTitle}>Comment ça marche ?</Text>
           {[
-            '📝 Tu publies une demande (urgente ou planifiée)',
-            '🔔 Les transporteurs disponibles la voient',
-            '💬 Un transporteur te fait une offre de prix',
-            '✅ Tu acceptes et il vient chercher ta marchandise',
+            { icon: 'create-outline',        txt: 'Tu publies une demande (urgente ou planifiée)' },
+            { icon: 'notifications-outline', txt: 'Les transporteurs disponibles la voient' },
+            { icon: 'chatbubble-outline',     txt: 'Un transporteur te fait une offre de prix' },
+            { icon: 'checkmark-circle-outline', txt: 'Tu acceptes et il vient chercher ta marchandise' },
           ].map((item, i) => (
-            <Text key={i} style={s.infoStep}>{item}</Text>
+            <View key={i} style={s.infoStep}>
+              <Ionicons name={item.icon} size={16} color={C.accent} style={{ marginRight: 10, marginTop: 1 }} />
+              <Text style={s.infoStepTxt}>{item.txt}</Text>
+            </View>
           ))}
         </View>
       </ScrollView>
 
-      <DateTimePickerModal
-        isVisible={showDate}
-        mode="date"
-        minimumDate={new Date()}
-        onConfirm={d => { setDate(d); setShowDate(false); }}
-        onCancel={() => setShowDate(false)}
-        locale="fr_FR"
-        confirmTextIOS="Confirmer"
-        cancelTextIOS="Annuler"
-      />
     </KeyboardAvoidingView>
+  );
+}
+
+function OptionToggle({ icon, title, sub, value, onToggle, last }) {
+  return (
+    <TouchableOpacity style={[opt.row, last && { borderBottomWidth: 0 }]} onPress={onToggle} activeOpacity={0.8}>
+      <View style={opt.optIcon}><Ionicons name={icon} size={17} color={C.muted} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={opt.optTitle}>{title}</Text>
+        <Text style={opt.optSub}>{sub}</Text>
+      </View>
+      <View style={[opt.toggle, value && { backgroundColor: C.success }]}>
+        <View style={[opt.thumb, value && { alignSelf: 'flex-end' }]} />
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -597,105 +690,73 @@ function TransporteurHome({ user }) {
   const [demandes, setDemandes]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Filtre urgence
-  const [urgFilter, setUrgFilter]   = useState('tous');   // 'tous' | 'maintenant' | 'planifie'
-  // Filtre type marchandise
+  const [urgFilter, setUrgFilter]   = useState('tous');
   const [typeFilter, setTypeFilter] = useState('');
 
   const fetchDemandes = useCallback(() => {
     try {
-      const data = demandesDB.getDisponibles(
-        urgFilter !== 'tous' ? urgFilter : null
-      );
-      setDemandes(data);
+      setDemandes(demandesDB.getDisponibles(urgFilter !== 'tous' ? urgFilter : null));
     } catch (e) { console.log('fetch error:', e.message); }
     finally { setLoading(false); setRefreshing(false); }
   }, [urgFilter]);
 
   useState(() => { fetchDemandes(); }, []);
 
-  // Re-fetch quand le filtre urgence change
   const onUrgFilterChange = (val) => {
     setUrgFilter(val);
     setLoading(true);
     try {
-      const data = demandesDB.getDisponibles(val !== 'tous' ? val : null);
-      setDemandes(data);
+      setDemandes(demandesDB.getDisponibles(val !== 'tous' ? val : null));
     } catch (e) { console.log(e.message); }
     finally { setLoading(false); }
   };
 
-  const displayed = typeFilter
-    ? demandes.filter(d => d.type_marchandise === typeFilter)
-    : demandes;
-
+  const displayed     = typeFilter ? demandes.filter(d => d.type_marchandise === typeFilter) : demandes;
   const urgentCount   = demandes.filter(d => d.type_demande === 'maintenant').length;
   const planifieCount = demandes.filter(d => d.type_demande === 'planifie').length;
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {/* Header */}
-      <View style={[s.header, { backgroundColor: C.blueDark }]}>
-        <View style={s.headerLeft}>
-          <View style={s.logoBubble}><Text style={{ fontSize: 22 }}>🚛</Text></View>
-          <View>
-            <Text style={s.appName}>DzExpress</Text>
-            <Text style={s.appSub}>🚛 Transporteur</Text>
-          </View>
-        </View>
-        <View style={[s.roleBadge, { backgroundColor: C.blueLight }]}>
-          <Text style={[s.roleBadgeTxt, { color: C.blue }]}>
-            {demandes.length} demande{demandes.length !== 1 ? 's' : ''}
-          </Text>
+    <View style={{ flex: 1, backgroundColor: C.bgAlt }}>
+      <View style={s.header}>
+        <Logo />
+        <View style={[s.headerBadge, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+          <Ionicons name="car-sport-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+          <Text style={s.headerBadgeTxt}>{demandes.length} demande{demandes.length !== 1 ? 's' : ''}</Text>
         </View>
       </View>
 
-      {/* ── Filtre Urgent / Planifié / Tous ── */}
+      {/* Filtre Urgent / Planifié / Tous */}
       <View style={s.urgFilterBar}>
         {[
-          { key: 'tous',        icon: '🔍', label: 'Tous',     count: demandes.length },
-          { key: 'maintenant',  icon: '🚀', label: 'Urgent',   count: urgentCount },
-          { key: 'planifie',    icon: '📅', label: 'Planifié', count: planifieCount },
-        ].map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[s.urgBtn,
-              urgFilter === f.key && (
-                f.key === 'maintenant' ? s.urgBtnRed
-                  : f.key === 'planifie' ? s.urgBtnBlue
-                  : s.urgBtnGray
-              )
-            ]}
-            onPress={() => onUrgFilterChange(f.key)}
-            activeOpacity={0.85}
-          >
-            <Text style={[s.urgBtnIcon]}>{f.icon}</Text>
-            <Text style={[s.urgBtnTxt, urgFilter === f.key && { color: 'white' }]}>
-              {f.label}
-            </Text>
-            {f.count > 0 && (
-              <View style={[s.urgCount,
-                urgFilter === f.key ? { backgroundColor: 'rgba(255,255,255,0.3)' } : { backgroundColor: C.border }
-              ]}>
-                <Text style={[s.urgCountTxt, urgFilter === f.key && { color: 'white' }]}>
-                  {f.count}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
+          { key: 'tous',       iconName: 'search-outline',   label: 'Tous',     count: demandes.length },
+          { key: 'maintenant', iconName: 'flash-outline',    label: 'Urgent',   count: urgentCount },
+          { key: 'planifie',   iconName: 'calendar-outline', label: 'Planifié', count: planifieCount },
+        ].map(f => {
+          const active = urgFilter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
+              style={[s.urgBtn, active && s.urgBtnActive]}
+              onPress={() => onUrgFilterChange(f.key)} activeOpacity={0.85}
+            >
+              <Ionicons name={f.iconName} size={14} color={active ? '#FFFFFF' : C.muted} />
+              <Text style={[s.urgBtnTxt, active && { color: '#FFFFFF' }]}>{f.label}</Text>
+              {f.count > 0 && (
+                <View style={[s.urgCount, active && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                  <Text style={[s.urgCountTxt, active && { color: '#FFFFFF' }]}>{f.count}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Filtre type marchandise */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
         style={s.typeFilterBar}
-        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8, gap: 7 }}>
-        <TouchableOpacity
-          style={[s.typeChip, !typeFilter && s.typeChipActive]}
-          onPress={() => setTypeFilter('')}
-        >
-          <Text style={[s.typeChipTxt, !typeFilter && { color: C.white }]}>Tout</Text>
+        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 7 }}>
+        <TouchableOpacity style={[s.typeChip, !typeFilter && s.typeChipActive]} onPress={() => setTypeFilter('')}>
+          <Text style={[s.typeChipTxt, !typeFilter && { color: '#FFFFFF' }]}>Tout</Text>
         </TouchableOpacity>
         {TYPES_MARCHANDISE.map(t => (
           <TouchableOpacity
@@ -703,37 +764,30 @@ function TransporteurHome({ user }) {
             style={[s.typeChip, typeFilter === t.key && s.typeChipActive]}
             onPress={() => setTypeFilter(typeFilter === t.key ? '' : t.key)}
           >
-            <Text style={[s.typeChipTxt, typeFilter === t.key && { color: C.white }]}>
-              {t.icon} {t.label}
-            </Text>
+            <Ionicons name={t.icon} size={13} color={typeFilter === t.key ? '#FFFFFF' : C.muted} style={{ marginRight: 4 }} />
+            <Text style={[s.typeChipTxt, typeFilter === t.key && { color: '#FFFFFF' }]}>{t.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
       {/* Liste */}
       {loading ? (
-        <View style={s.center}><ActivityIndicator size="large" color={C.blue} /></View>
+        <View style={s.center}><ActivityIndicator size="large" color={C.primary} /></View>
       ) : displayed.length === 0 ? (
         <View style={s.center}>
-          <Text style={{ fontSize: 52, marginBottom: 14 }}>
-            {urgFilter === 'maintenant' ? '🚀' : urgFilter === 'planifie' ? '📅' : '🔍'}
-          </Text>
+          <View style={s.emptyIcon}>
+            <Ionicons name={urgFilter === 'maintenant' ? 'flash-outline' : urgFilter === 'planifie' ? 'calendar-outline' : 'search-outline'} size={32} color="#D1D5DB" />
+          </View>
           <Text style={s.emptyTitle}>
-            {urgFilter === 'maintenant' ? 'Aucune urgence' :
-             urgFilter === 'planifie'   ? 'Aucune planifiée' :
-             'Aucune demande disponible'}
+            {urgFilter === 'maintenant' ? 'Aucune urgence' : urgFilter === 'planifie' ? 'Aucune planifiée' : 'Aucune demande'}
           </Text>
-          <Text style={s.emptyDesc}>Reviens dans quelques minutes 🕐</Text>
+          <Text style={s.emptyDesc}>Reviens dans quelques minutes</Text>
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 14, gap: 12, paddingBottom: 90 }}
+          contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: 90 }}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); fetchDemandes(); }}
-              tintColor={C.blue}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchDemandes(); }} tintColor={C.primary} />
           }
         >
           <Text style={s.countTxt}>{displayed.length} demande{displayed.length > 1 ? 's' : ''}</Text>
@@ -746,7 +800,6 @@ function TransporteurHome({ user }) {
   );
 }
 
-// ── Carte demande ────────────────────────────────────────────
 function DemandeCard({ demande: d, onPress }) {
   const isUrgent    = d.type_demande === 'maintenant';
   const typeInfo    = TYPES_MARCHANDISE.find(t => t.key === d.type_marchandise);
@@ -755,22 +808,22 @@ function DemandeCard({ demande: d, onPress }) {
 
   return (
     <TouchableOpacity style={[s.card, isUrgent && s.cardUrgent]} onPress={onPress} activeOpacity={0.88}>
-      {/* Badge urgent */}
       {isUrgent && (
         <View style={s.urgentBanner}>
-          <Text style={s.urgentBannerTxt}>🚀 URGENT — Transport immédiat</Text>
+          <Ionicons name="flash" size={12} color={C.error} style={{ marginRight: 6 }} />
+          <Text style={s.urgentBannerTxt}>URGENT — Transport immédiat</Text>
         </View>
       )}
 
       <View style={s.cardTop}>
-        <View style={[s.cardIconBox, { backgroundColor: isUrgent ? '#FEF2F2' : C.blueLight }]}>
-          <Text style={{ fontSize: 28 }}>{typeInfo?.icon || '📦'}</Text>
+        <View style={[s.cardIconBox, { backgroundColor: isUrgent ? C.errorLight : C.bgAlt }]}>
+          <Ionicons name={typeInfo?.icon || 'cube-outline'} size={26} color={isUrgent ? C.error : C.muted} />
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={s.cardType}>{typeInfo?.label || d.type_marchandise}</Text>
-          <View style={s.routeRow}>
+          <Text style={s.cardTypeTxt}>{typeInfo?.label || d.type_marchandise}</Text>
+          <View style={s.routeRowInner}>
             <Text style={s.cityFrom}>{d.ville_depart}</Text>
-            <Text style={[s.routeArrowTxt, { color: isUrgent ? C.red : C.blue }]}> → </Text>
+            <Ionicons name="arrow-forward" size={13} color={C.muted} style={{ marginHorizontal: 5 }} />
             <Text style={s.cityTo}>{d.ville_arrivee}</Text>
           </View>
         </View>
@@ -783,213 +836,234 @@ function DemandeCard({ demande: d, onPress }) {
 
       <View style={s.cardMeta}>
         {isUrgent ? (
-          <View style={s.metaUrgent}><Text style={s.metaUrgentTxt}>🚀 Maintenant</Text></View>
+          <View style={[s.metaChip, { backgroundColor: C.errorLight, borderColor: '#FCA5A5' }]}>
+            <Ionicons name="flash" size={11} color={C.error} style={{ marginRight: 3 }} />
+            <Text style={[s.metaChipTxt, { color: C.error }]}>Maintenant</Text>
+          </View>
         ) : (
           <>
-            <View style={s.metaChip}><Text style={s.metaChipTxt}>📅 {d.date_souhaitee}</Text></View>
+            <View style={s.metaChip}>
+              <Ionicons name="calendar-outline" size={11} color={C.muted} style={{ marginRight: 3 }} />
+              <Text style={s.metaChipTxt}>{d.date_souhaitee}</Text>
+            </View>
             {creneauInfo && (
-              <View style={[s.metaChip, { backgroundColor: C.blueLight, borderColor: '#BFDBFE' }]}>
-                <Text style={[s.metaChipTxt, { color: C.blue }]}>{creneauInfo.icon} {creneauInfo.label}</Text>
+              <View style={s.metaChip}>
+                <Ionicons name={creneauInfo.icon} size={11} color={C.muted} style={{ marginRight: 3 }} />
+                <Text style={s.metaChipTxt}>{creneauInfo.label}</Text>
               </View>
             )}
           </>
         )}
         {distKm != null && (
-          <View style={[s.metaChip, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
-            <Text style={[s.metaChipTxt, { color: '#16A34A' }]}>📏 {fmtKm(distKm)}</Text>
+          <View style={[s.metaChip, { backgroundColor: C.successLight, borderColor: '#6EE7B7' }]}>
+            <Ionicons name="navigate-outline" size={11} color={C.success} style={{ marginRight: 3 }} />
+            <Text style={[s.metaChipTxt, { color: C.success }]}>{fmtKm(distKm)}</Text>
           </View>
         )}
-        {d.poids && <View style={s.metaChip}><Text style={s.metaChipTxt}>⚖️ {d.poids}</Text></View>}
-        {d.expediteur_wilaya && (
-          <View style={s.metaChip}><Text style={s.metaChipTxt}>📍 {d.expediteur_wilaya}</Text></View>
+        {d.poids && (
+          <View style={s.metaChip}>
+            <Ionicons name="scale-outline" size={11} color={C.muted} style={{ marginRight: 3 }} />
+            <Text style={s.metaChipTxt}>{d.poids}</Text>
+          </View>
         )}
       </View>
 
       {d.prix_estime > 0 && (
         <View style={s.prixChip}>
-          <Text style={s.prixChipTxt}>💰 À partir de {fmtPrix(d.prix_estime)}</Text>
+          <Ionicons name="cash-outline" size={12} color={C.success} style={{ marginRight: 5 }} />
+          <Text style={s.prixChipTxt}>À partir de {fmtPrix(d.prix_estime)}</Text>
         </View>
       )}
 
       <View style={s.cardFooter}>
-        <Text style={s.clientTxt}>👤 {d.expediteur_nom}</Text>
-        <Text style={[s.voirDetail, { color: isUrgent ? C.red : C.blue }]}>Voir →</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="person-outline" size={13} color={C.muted} style={{ marginRight: 5 }} />
+          <Text style={s.clientTxt}>{d.expediteur_nom}</Text>
+        </View>
+        <View style={s.voirDetail}>
+          <Text style={s.voirDetailTxt}>Voir</Text>
+          <Ionicons name="chevron-forward" size={14} color={C.primary} />
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
 // ════════════════════════════════════════════════════════════
-// ── Entry point ──────────────────────────────────────────────
-// ════════════════════════════════════════════════════════════
 export default function HomeScreen() {
   const { user, loading } = useApp();
-
-  if (loading) return (
-    <View style={s.center}><ActivityIndicator size="large" color={C.blue} /></View>
-  );
-
+  if (loading) return <View style={s.center}><ActivityIndicator size="large" color={C.primary} /></View>;
   if (!user) return <Redirect href="/onboarding" />;
-
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {user.type === 'expediteur'
-        ? <ExpéditeurHome user={user} />
-        : <TransporteurHome user={user} />
-      }
+    <View style={{ flex: 1, backgroundColor: C.bgAlt }}>
+{user.type === 'expediteur' ? <ExpéditeurHome user={user} /> : <TransporteurHome user={user} />}
     </View>
   );
 }
 
 // ── Styles ───────────────────────────────────────────────────
 const s = StyleSheet.create({
-  center:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: C.bg },
-  emptyTitle:  { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
-  emptyDesc:   { fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20 },
-  countTxt:    { fontSize: 13, color: C.muted, marginBottom: 4 },
+  center:     { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  emptyIcon:  { width: 64, height: 64, borderRadius: 32, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 6, textAlign: 'center' },
+  emptyDesc:  { fontSize: 14, color: C.muted, textAlign: 'center' },
+  countTxt:   { fontSize: 13, color: C.muted, marginBottom: 4 },
 
-  // Header
-  header:      { paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12, paddingBottom: 18, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  logoBubble:  { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  appName:     { color: 'white', fontSize: 20, fontWeight: '900' },
-  appSub:      { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 1 },
-  roleBadge:   { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  roleBadgeTxt:{ fontSize: 12, fontWeight: '700' },
+  header: {
+    backgroundColor: C.primary,
+    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12,
+    paddingBottom: 18, paddingHorizontal: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  headerBadge:    { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 50 },
+  headerBadgeTxt: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 
-  // Filtre urgence (transporteur)
-  urgFilterBar:{ flexDirection: 'row', backgroundColor: C.white, paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: 1, borderBottomColor: C.border },
-  urgBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 9, borderRadius: 12, backgroundColor: C.bg, borderWidth: 1.5, borderColor: C.border },
-  urgBtnRed:   { backgroundColor: C.red, borderColor: C.red },
-  urgBtnBlue:  { backgroundColor: C.blue, borderColor: C.blue },
-  urgBtnGray:  { backgroundColor: C.muted, borderColor: C.muted },
-  urgBtnIcon:  { fontSize: 14 },
-  urgBtnTxt:   { fontSize: 12, fontWeight: '800', color: C.text },
-  urgCount:    { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
-  urgCountTxt: { fontSize: 11, fontWeight: '700', color: C.muted },
+  urgFilterBar: { flexDirection: 'row', backgroundColor: C.bg, paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  urgBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 9, borderRadius: 10, backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border },
+  urgBtnActive: { backgroundColor: C.primary, borderColor: C.primary },
+  urgBtnTxt:    { fontSize: 12, fontWeight: '700', color: C.muted },
+  urgCount:     { borderRadius: 10, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: C.border },
+  urgCountTxt:  { fontSize: 10, fontWeight: '700', color: C.muted },
 
-  // Filtre type (transporteur)
-  typeFilterBar: { backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.border, flexGrow: 0 },
-  typeChip:    { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white },
-  typeChipActive: { backgroundColor: C.blue, borderColor: C.blue },
-  typeChipTxt: { fontSize: 12, fontWeight: '600', color: C.muted },
+  typeFilterBar: { backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border, flexGrow: 0 },
+  typeChip:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 50, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bg },
+  typeChipActive:{ backgroundColor: C.primary, borderColor: C.primary },
+  typeChipTxt:   { fontSize: 12, fontWeight: '600', color: C.muted },
 
-  // Formulaire expéditeur
-  formCard:    { backgroundColor: C.white, borderRadius: 20, padding: 18, elevation: 2, borderWidth: 1, borderColor: C.border, marginBottom: 16 },
+  formCard: { backgroundColor: C.bg, borderRadius: 12, padding: 18, elevation: 2, borderWidth: 1, borderColor: C.border, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06 },
 
-  // Toggle Maintenant / Planifier
-  modeToggle:  { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  modeBtn:     { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 16, borderWidth: 2, borderColor: C.border, backgroundColor: C.bg, gap: 2 },
-  modeBtnUrgent: { backgroundColor: C.red, borderColor: C.red },
-  modeBtnPlanifie: { backgroundColor: C.blue, borderColor: C.blue },
-  modeIcon:    { fontSize: 28, color: C.muted },
-  modeBtnTxt:  { fontSize: 15, fontWeight: '700', color: C.muted },
-  modeBtnSub:  { fontSize: 11, color: C.muted },
+  whenTitle:     { fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 10, letterSpacing: -0.1 },
+  modeCards:     { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  modeCard:      { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgAlt, gap: 5 },
+  modeCardActive:{ backgroundColor: C.primary, borderColor: C.primary },
+  modeCardTitle: { fontSize: 13, fontWeight: '800', color: C.muted },
+  modeCardSub:   { fontSize: 10, color: C.muted, textAlign: 'center', paddingHorizontal: 6, lineHeight: 14 },
 
-  urgenceBanner: { backgroundColor: '#FEF2F2', borderRadius: 12, padding: 12, marginBottom: 4, borderWidth: 1, borderColor: '#FECACA' },
-  urgenceTxt:  { fontSize: 13, color: C.red, lineHeight: 19 },
+  dtRow:         { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  dtBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 13 },
+  dtBtnFilled:   { borderColor: C.primary, backgroundColor: C.bg },
+  dtBtnTxt:      { fontSize: 13, fontWeight: '600', color: C.text, flex: 1 },
+  dtSummary:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, borderRadius: 8, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#6EE7B7' },
+  dtSummaryTxt:  { fontSize: 12, color: C.success, fontWeight: '700', flex: 1 },
+  dtPickerDone:  { backgroundColor: C.primary, borderRadius: 50, paddingVertical: 12, alignItems: 'center', marginBottom: 10 },
+  dtPickerDoneTxt: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
 
-  formTitle:   { fontSize: 18, fontWeight: '900', color: C.text, marginBottom: 3 },
-  formSub:     { fontSize: 13, color: C.muted, marginBottom: 18, lineHeight: 19 },
+  urgenceBanner: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.errorLight, borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#FCA5A5' },
+  urgenceTxt:    { fontSize: 13, color: C.error, lineHeight: 19, flex: 1 },
 
-  label:       { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
-  input:       { backgroundColor: C.bg, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.text, marginBottom: 16 },
+  formTitle: { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 3, letterSpacing: -0.3 },
+  formSub:   { fontSize: 13, color: C.muted, marginBottom: 18 },
 
-  routeBlock:  { marginBottom: 4 },
-  routeDivider:{ flexDirection: 'row', alignItems: 'center', marginVertical: 6, gap: 8 },
-  routeLine:   { flex: 1, height: 1, backgroundColor: C.border },
-  routeArrow:  { fontSize: 18, fontWeight: '700' },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  input:      { backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.text, marginBottom: 16 },
 
-  // GPS button
-  gpsLabelRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  gpsBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1.5, backgroundColor: C.white, minWidth: 32, minHeight: 30, justifyContent: 'center' },
-  gpsBtnLoading: { opacity: 0.6 },
-  gpsBtnTxt:     { fontSize: 12, fontWeight: '700' },
-  gpsFillBadge:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F0FDF4', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 6, borderWidth: 1, borderColor: '#BBF7D0' },
-  gpsFillTxt:    { fontSize: 13, fontWeight: '700', color: '#16A34A', flex: 1 },
-  gpsClearTxt:   { fontSize: 14, color: '#64748B', paddingLeft: 8, fontWeight: '600' },
+  routeBlock:   { marginBottom: 4 },
+  routeDivider: { flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 },
+  routeLine:    { flex: 1, height: 1, backgroundColor: C.border },
+  routeIconBox: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
 
+  gpsLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  gpsBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 50, borderWidth: 1.5, borderColor: C.accent, backgroundColor: C.accentLight },
+  gpsBtnTxt:   { fontSize: 12, fontWeight: '700', color: C.accent },
+  gpsFillBadge:{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8, borderWidth: 1, borderColor: '#6EE7B7' },
+  gpsFillTxt:  { fontSize: 13, fontWeight: '700', color: C.success, flex: 1 },
 
   typeGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  typeBtn:     { width: '31%', backgroundColor: C.bg, borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1.5, borderColor: C.border },
-  typeBtnUrgent: { borderColor: C.orange, backgroundColor: C.orangeLight },
-  typeBtnPlanifie: { borderColor: C.blue, backgroundColor: C.blueLight },
-  typeTxt:     { fontSize: 10, fontWeight: '700', color: C.muted, marginTop: 4, textAlign: 'center' },
+  typeBtn:     { width: '31%', backgroundColor: C.bgAlt, borderRadius: 10, paddingVertical: 12, alignItems: 'center', borderWidth: 1.5, borderColor: C.border, gap: 5 },
+  typeBtnActive: { borderColor: C.accent, backgroundColor: C.accentLight },
+  typeTxt:     { fontSize: 10, fontWeight: '600', color: C.muted, textAlign: 'center' },
 
-  datePicker:  { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1.5, borderColor: C.border, marginBottom: 16 },
-  datePickerTxt: { fontSize: 14, color: C.text, fontWeight: '500', flex: 1 },
 
-  // Créneau horaire
-  creneauGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  creneauBtn:  { width: '48%', borderWidth: 1.5, borderColor: C.border, borderRadius: 14, padding: 12, alignItems: 'center', backgroundColor: C.bg, gap: 3 },
-  creneauBtnActive: { borderColor: C.blue, backgroundColor: C.blueLight },
-  creneauTxt:  { fontSize: 13, fontWeight: '700', color: C.muted },
-  creneauSub:  { fontSize: 11, color: C.muted },
+  submitBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, marginTop: 4 },
+  submitBtnTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  submitBtnSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11 },
 
-  submitBtn:   { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 4, gap: 3 },
-  submitBtnTxt:{ color: 'white', fontSize: 17, fontWeight: '900' },
-  submitBtnSub:{ color: 'rgba(255,255,255,0.75)', fontSize: 12 },
+  infoBox:     { backgroundColor: C.bg, borderRadius: 12, padding: 18, borderWidth: 1, borderColor: C.border },
+  infoTitle:   { fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 14, letterSpacing: -0.2 },
+  infoStep:    { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  infoStepTxt: { fontSize: 13, color: C.muted, lineHeight: 20, flex: 1 },
 
-  infoBox:     { backgroundColor: C.white, borderRadius: 16, padding: 18, borderWidth: 1, borderColor: C.border },
-  infoTitle:   { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 12 },
-  infoStep:    { fontSize: 13, color: C.muted, lineHeight: 22, marginBottom: 2 },
+  card:        { backgroundColor: C.bg, borderRadius: 12, padding: 14, elevation: 2, borderWidth: 1, borderColor: '#F3F4F6', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06 },
+  cardUrgent:  { borderColor: '#FCA5A5', borderWidth: 1.5 },
+  urgentBanner:{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, marginHorizontal: -14, marginTop: -14, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#FCA5A5' },
+  urgentBannerTxt: { fontSize: 12, fontWeight: '800', color: C.error },
 
-  // Cartes demandes (transporteur)
-  card:        { backgroundColor: C.white, borderRadius: 16, padding: 14, elevation: 2, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
-  cardUrgent:  { borderColor: '#FECACA', borderWidth: 2 },
-  urgentBanner:{ backgroundColor: '#FEF2F2', marginHorizontal: -14, marginTop: -14, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#FECACA' },
-  urgentBannerTxt: { fontSize: 12, fontWeight: '800', color: C.red },
   cardTop:     { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  cardIconBox: { width: 54, height: 54, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  cardType:    { fontSize: 12, fontWeight: '700', color: C.muted, marginBottom: 3 },
-  routeRow:    { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  cityFrom:    { fontSize: 15, fontWeight: '900', color: C.text },
-  routeArrowTxt: { fontSize: 15, fontWeight: '700' },
-  cityTo:      { fontSize: 15, fontWeight: '900', color: C.text },
-  offreBadge:  { backgroundColor: C.greenLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: '#BBF7D0' },
-  offreBadgeTxt: { fontSize: 11, fontWeight: '800', color: C.green },
+  cardIconBox: { width: 52, height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  cardTypeTxt: { fontSize: 11, fontWeight: '700', color: C.muted, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.3 },
+  routeRowInner: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  cityFrom:    { fontSize: 15, fontWeight: '800', color: C.text, letterSpacing: -0.2 },
+  cityTo:      { fontSize: 15, fontWeight: '800', color: C.text, letterSpacing: -0.2 },
+
+  offreBadge:    { backgroundColor: C.successLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: '#6EE7B7' },
+  offreBadgeTxt: { fontSize: 11, fontWeight: '800', color: C.success },
+
   cardMeta:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  metaChip:    { backgroundColor: C.bg, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: C.border },
+  metaChip:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgAlt, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 50, borderWidth: 1, borderColor: C.border },
   metaChipTxt: { fontSize: 11, color: C.muted, fontWeight: '600' },
-  metaUrgent:  { backgroundColor: '#FEF2F2', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#FECACA' },
-  metaUrgentTxt: { fontSize: 11, color: C.red, fontWeight: '800' },
-  cardFooter:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.border, paddingTop: 9 },
-  clientTxt:   { fontSize: 13, fontWeight: '600', color: C.text },
-  voirDetail:  { fontSize: 13, fontWeight: '700' },
-  prixChip:    { backgroundColor: '#F0FDF4', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 8, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#BBF7D0' },
-  prixChipTxt: { fontSize: 12, fontWeight: '800', color: '#16A34A' },
+
+  prixChip:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 8, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#6EE7B7' },
+  prixChipTxt: { fontSize: 12, fontWeight: '700', color: C.success },
+
+  cardFooter:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10 },
+  clientTxt:   { fontSize: 13, fontWeight: '600', color: C.muted },
+  voirDetail:  { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  voirDetailTxt: { fontSize: 13, fontWeight: '700', color: C.primary },
 });
 
-// ── Styles widget prix ───────────────────────────────────────
 const px = StyleSheet.create({
-  box:        { backgroundColor: '#F0FDF4', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#BBF7D0', marginBottom: 14 },
-  headerRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
-  title:      { fontSize: 14, fontWeight: '900', color: '#16A34A', flex: 1 },
-  surgeBadge: { backgroundColor: '#FEF2F2', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FECACA' },
-  surgeTxt:   { fontSize: 11, fontWeight: '800', color: '#DC2626' },
-  surgeRow:   { backgroundColor: '#FFF7ED', borderRadius: 8, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#FED7AA' },
-  surgeLabel: { fontSize: 12, fontWeight: '700', color: '#F97316' },
-  row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#DCFCE7' },
-  vehTxt:     { fontSize: 13, color: '#1E293B', fontWeight: '600' },
-  rangeTxt:   { fontSize: 13, fontWeight: '800', color: '#1A56DB' },
-  detailBtn:  { marginTop: 10, alignItems: 'center' },
-  detailBtnTxt:{ fontSize: 12, fontWeight: '700', color: '#16A34A' },
-  detail:     { backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10, marginTop: 8 },
-  detailLine: { fontSize: 12, color: '#374151', marginBottom: 3 },
+  box:        { backgroundColor: C.successLight, borderRadius: 12, padding: 14, borderWidth: 1.5, borderColor: '#6EE7B7', marginBottom: 14 },
+  headerRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' },
+  title:      { fontSize: 13, fontWeight: '800', color: C.success, flex: 1 },
+  surgeBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, borderRadius: 50, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' },
+  surgeTxt:   { fontSize: 11, fontWeight: '800', color: C.error },
+  surgeRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: 8, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#FED7AA' },
+  surgeLabel: { fontSize: 12, fontWeight: '700', color: C.accent },
+  row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#A7F3D0' },
+  vehTxt:     { fontSize: 13, color: C.text, fontWeight: '600' },
+  rangeTxt:   { fontSize: 13, fontWeight: '800', color: C.primary },
+  detailBtn:  { flexDirection: 'row', alignItems: 'center', marginTop: 10, justifyContent: 'center' },
+  detailBtnTxt: { fontSize: 12, fontWeight: '700', color: C.success },
+  detail:     { backgroundColor: '#ECFDF5', borderRadius: 8, padding: 10, marginTop: 8 },
+  detailLine: { fontSize: 12, color: C.muted, marginBottom: 3 },
 });
 
-// ── Styles options supplémentaires ───────────────────────────
+// Sous-catégorie chips
+const sc = StyleSheet.create({
+  chipRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 },
+  chip:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 50, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgAlt },
+  chipActive:  { borderColor: C.accent, backgroundColor: C.accentLight },
+  chipTxt:     { fontSize: 12, fontWeight: '600', color: C.muted },
+  chipTxtActive: { color: C.accent, fontWeight: '700' },
+});
+
+// Véhicule recommandé
+const vr = StyleSheet.create({
+  box:         { backgroundColor: C.bgAlt, borderRadius: 12, padding: 14, borderWidth: 1.5, borderColor: C.border, marginBottom: 14 },
+  title:       { fontSize: 13, fontWeight: '800', color: C.text },
+  grid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  card:        { width: '47%', borderWidth: 1.5, borderColor: C.border, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 10, alignItems: 'center', gap: 5, backgroundColor: C.bg, position: 'relative' },
+  cardSelected:{ borderColor: C.primary, borderWidth: 2 },
+  cardLabel:   { fontSize: 11, fontWeight: '600', color: C.muted, textAlign: 'center' },
+  recBadge:    { position: 'absolute', top: 6, right: 6, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+});
+
+// Avertissement
+const wn = StyleSheet.create({
+  box: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1.5, borderColor: '#FCD34D' },
+  txt: { flex: 1, fontSize: 13, color: '#92400E', lineHeight: 19, fontWeight: '600' },
+});
+
 const opt = StyleSheet.create({
-  section:    { backgroundColor: '#F8FAFC', borderRadius: 14, borderWidth: 1.5, borderColor: '#E2E8F0', marginBottom: 14, overflow: 'hidden' },
-  row:        { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 12 },
-  optTitle:   { fontSize: 14, fontWeight: '700', color: '#1E293B' },
-  optSub:     { fontSize: 12, color: '#64748B', marginTop: 2 },
+  section:    { backgroundColor: C.bgAlt, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, marginBottom: 14, overflow: 'hidden' },
+  row:        { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: C.border, gap: 12 },
+  optIcon:    { width: 32, height: 32, borderRadius: 8, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' },
+  optTitle:   { fontSize: 14, fontWeight: '700', color: C.text },
+  optSub:     { fontSize: 12, color: C.muted, marginTop: 2 },
   counter:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  counterBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
-  counterBtnTxt: { fontSize: 18, fontWeight: '900', color: '#1E293B', lineHeight: 22 },
-  counterVal: { fontSize: 18, fontWeight: '900', color: '#1E293B', minWidth: 22, textAlign: 'center' },
-  toggle:     { width: 46, height: 26, borderRadius: 13, backgroundColor: '#E2E8F0', justifyContent: 'center', padding: 3 },
-  toggleOn:   { backgroundColor: '#16A34A' },
+  counterBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.bg, borderWidth: 1.5, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  counterBtnTxt: { fontSize: 18, fontWeight: '900', color: C.text, lineHeight: 22 },
+  counterVal: { fontSize: 17, fontWeight: '900', color: C.text, minWidth: 22, textAlign: 'center' },
+  toggle:     { width: 46, height: 26, borderRadius: 13, backgroundColor: '#D1D5DB', justifyContent: 'center', padding: 3 },
   thumb:      { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF', elevation: 2 },
-  thumbOn:    { alignSelf: 'flex-end' },
 });
