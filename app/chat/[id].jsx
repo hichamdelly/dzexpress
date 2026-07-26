@@ -8,8 +8,11 @@ import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '../../src/context/AppContext';
-import { demandesDB, messagesDB } from '../../src/db/database';
+import { demandesDB, messagesDB, notifDB } from '../../src/db/database';
+import { NT } from '../../src/lib/notifications';
 import { playNotifSound } from '../../src/utils/sound';
+
+const MAX_REC_SECS = 120;
 
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
@@ -42,13 +45,15 @@ export default function ChatScreen() {
   const [recordDuration, setRecordDuration] = useState(0);
   const [playingId, setPlayingId]           = useState(null);
 
-  const flatListRef  = useRef(null);
-  const lastCountRef = useRef(0);
-  const intervalRef  = useRef(null);
-  const recTimerRef  = useRef(null);
-  const soundRef     = useRef(null);
-  const bannerY      = useRef(new Animated.Value(-70)).current;
-  const recPulse     = useRef(new Animated.Value(1)).current;
+  const flatListRef      = useRef(null);
+  const lastCountRef     = useRef(0);
+  const intervalRef      = useRef(null);
+  const recTimerRef      = useRef(null);
+  const soundRef         = useRef(null);
+  const recordingRef     = useRef(null);   // miroir ref de recording state
+  const recDurationRef   = useRef(0);      // miroir ref de recordDuration state
+  const bannerY          = useRef(new Animated.Value(-70)).current;
+  const recPulse         = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     try { setDemande(demandesDB.getById(parseInt(id))); } catch (_) {}
@@ -109,6 +114,14 @@ export default function ChatScreen() {
     setSending(true);
     try {
       messagesDB.create(parseInt(id), user.id, contenu);
+      const dem = demandesDB.getById(parseInt(id));
+      if (dem) {
+        const recipientId = dem.expediteur_id === user.id ? dem.transporteur_id : dem.expediteur_id;
+        if (recipientId) {
+          const preview = contenu.length > 50 ? contenu.substring(0, 50) + '…' : contenu;
+          notifDB.create(recipientId, `${user.nom} : ${preview}`, NT.NOUVEAU_MESSAGE, { route: `/chat/${id}` });
+        }
+      }
       setInputText('');
       loadMessages();
     } catch (e) {
@@ -118,15 +131,24 @@ export default function ChatScreen() {
     }
   };
 
+  // Micro disponible seulement si la course est en cours
+  const canVoice = ['acceptee', 'en_route'].includes(demande?.statut);
+
+  const cancelRecordingRef = useRef(false);
+
   const startRecording = async () => {
+    if (!canVoice) return;
     try {
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
-        Alert.alert('Microphone requis', 'Active l\'accès au micro dans les paramètres.');
+        Alert.alert('Microphone requis', "Active l'accès au micro dans les paramètres.");
         return;
       }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true, shouldDuckAndroid: true, playThroughEarpieceAndroid: false });
       const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      cancelRecordingRef.current = false;
+      recordingRef.current = rec;
+      recDurationRef.current = 0;
       setRecording(rec);
       setIsRecording(true);
       setRecordDuration(0);
@@ -136,34 +158,60 @@ export default function ChatScreen() {
           Animated.timing(recPulse, { toValue: 1,    duration: 600, useNativeDriver: true }),
         ])
       ).start();
-      recTimerRef.current = setInterval(() => setRecordDuration(d => d + 1), 1000);
+      recTimerRef.current = setInterval(() => {
+        recDurationRef.current += 1;
+        setRecordDuration(recDurationRef.current);
+      }, 1000);
     } catch {
-      Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement.');
+      Alert.alert('Erreur', "Impossible de démarrer l'enregistrement.");
     }
   };
 
-  const stopRecording = async () => {
-    if (!recording) return;
+  const stopRecording = async (cancelled = false) => {
+    const rec = recordingRef.current;
+    if (!rec) return;
+    recordingRef.current = null;
     clearInterval(recTimerRef.current);
     recPulse.stopAnimation();
     recPulse.setValue(1);
-    const dur = recordDuration;
+    const dur = recDurationRef.current;
+    const shouldDiscard = cancelled || cancelRecordingRef.current;
     setIsRecording(false);
     try {
-      await recording.stopAndUnloadAsync();
+      await rec.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: false });
-      const uri = recording.getURI();
+      const uri = rec.getURI();
       setRecording(null);
+      recDurationRef.current = 0;
       setRecordDuration(0);
-      if (uri && dur >= 1) {
+      if (uri && dur >= 1 && !shouldDiscard) {
         messagesDB.createVoice(parseInt(id), user.id, uri, dur);
+        const dem = demandesDB.getById(parseInt(id));
+        if (dem) {
+          const recipientId = dem.expediteur_id === user.id ? dem.transporteur_id : dem.expediteur_id;
+          if (recipientId) notifDB.create(recipientId, `${user.nom} vous a envoyé un message vocal`, NT.NOUVEAU_MESSAGE, { route: `/chat/${id}` });
+        }
         loadMessages();
       }
     } catch {
       setRecording(null);
+      recDurationRef.current = 0;
       setRecordDuration(0);
     }
   };
+
+  const cancelRecording = () => {
+    cancelRecordingRef.current = true;
+    stopRecording(true);
+  };
+
+  // Auto-stop à 2 minutes
+  useEffect(() => {
+    if (isRecording && recordDuration >= MAX_REC_SECS) {
+      stopRecording();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordDuration, isRecording]);
 
   const playVoice = async (msgId, uri) => {
     try {
@@ -287,19 +335,39 @@ export default function ChatScreen() {
               <Ionicons name="chatbubble-ellipses-outline" size={40} color="#D1D5DB" />
             </View>
             <Text style={s.emptyTitle}>Démarrez la conversation</Text>
-            <Text style={s.emptySub}>Tapez un message ou maintenez le micro pour un vocal</Text>
+            <Text style={s.emptySub}>
+              {canVoice
+                ? 'Tapez un message ou maintenez le micro pour un vocal'
+                : 'Tapez un message pour démarrer la conversation'}
+            </Text>
           </View>
         )}
         renderItem={renderMsg}
         showsVerticalScrollIndicator={false}
       />
 
+      {isRecording && (
+        <View style={s.recHintBar}>
+          <Animated.View style={[s.recHintDot, { transform: [{ scale: recPulse }] }]} />
+          <Text style={s.recHintTxt} numberOfLines={1}>
+            {'Enregistrement...  Relâchez pour envoyer'}
+          </Text>
+          <TouchableOpacity style={s.recCancelBtn} onPress={cancelRecording}>
+            <Text style={s.recCancelTxt}>Annuler</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={s.inputBar}>
         {isRecording ? (
           <View style={s.recordingBar}>
             <Animated.View style={[s.recDot, { transform: [{ scale: recPulse }] }]} />
             <Text style={s.recTimer}>{fmtDuration(recordDuration)}</Text>
-            <Text style={s.recHint}>  En cours… relâchez pour envoyer</Text>
+            <Text style={s.recProgress}>
+              {'  ·  Max '}
+              {fmtDuration(MAX_REC_SECS - recordDuration)}
+              {' restant'}
+            </Text>
           </View>
         ) : (
           <TextInput
@@ -316,21 +384,23 @@ export default function ChatScreen() {
           />
         )}
 
-        <Animated.View style={{ transform: [{ scale: recPulse }] }}>
-          <TouchableOpacity
-            style={[s.micBtn, isRecording && s.micBtnActive]}
-            onLongPress={startRecording}
-            onPressOut={stopRecording}
-            delayLongPress={200}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name={isRecording ? 'radio-button-on' : 'mic-outline'}
-              size={20}
-              color={isRecording ? C.error : C.muted}
-            />
-          </TouchableOpacity>
-        </Animated.View>
+        {canVoice && (
+          <Animated.View style={{ transform: [{ scale: recPulse }] }}>
+            <TouchableOpacity
+              style={[s.micBtn, isRecording && s.micBtnActive]}
+              onLongPress={startRecording}
+              onPressOut={() => { if (isRecording) stopRecording(); }}
+              delayLongPress={200}
+              activeOpacity={0.75}
+            >
+              <Ionicons
+                name={isRecording ? 'radio-button-on' : 'mic-outline'}
+                size={20}
+                color={isRecording ? C.error : C.muted}
+              />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         {!isRecording && (
           <TouchableOpacity
@@ -385,12 +455,18 @@ const s = StyleSheet.create({
   emptyTitle:   { fontSize: 18, fontWeight: '800', color: C.text },
   emptySub:     { fontSize: 13, color: C.muted, textAlign: 'center', paddingHorizontal: 24, lineHeight: 19 },
 
+  recHintBar:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#FECACA', gap: 8 },
+  recHintDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: C.error },
+  recHintTxt:   { flex: 1, fontSize: 12, fontWeight: '700', color: C.error },
+  recCancelBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 50, backgroundColor: 'rgba(239,68,68,0.12)' },
+  recCancelTxt: { fontSize: 12, fontWeight: '800', color: C.error },
+
   inputBar:     { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingVertical: 8, gap: 8, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border, paddingBottom: Platform.OS === 'ios' ? 28 : 8 },
   input:        { flex: 1, backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, color: C.text, maxHeight: 120 },
   recordingBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, borderRadius: 22, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1.5, borderColor: '#FECACA' },
   recDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: C.error },
   recTimer:     { fontSize: 15, fontWeight: '900', color: C.error, marginLeft: 8 },
-  recHint:      { fontSize: 12, color: C.muted, flex: 1 },
+  recProgress:  { fontSize: 11, color: C.muted, flex: 1 },
   micBtn:       { width: 44, height: 44, borderRadius: 22, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border },
   micBtnActive: { backgroundColor: C.errorLight, borderColor: '#FECACA' },
   sendBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
