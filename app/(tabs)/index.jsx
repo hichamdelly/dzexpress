@@ -13,6 +13,7 @@ import { demandesDB, usersDB, offresDB, notifDB, agendaDB, gainsDB } from '../..
 import { getDistanceKm, fmtKm, WILAYA_COORDS } from '../../src/utils/wilayas';
 import { calculerPrix, calculerSurge, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
 import { useReservation } from '../../src/context/ReservationContext';
+import { useLanguage } from '../../src/i18n';
 
 function _haversine(lat1, lng1, lat2, lng2) {
   const R = 6371, toR = d => d * Math.PI / 180;
@@ -167,6 +168,7 @@ const ls = StyleSheet.create({
 function ExpéditeurHome({ user }) {
   const router = useRouter();
   const { setField, reset, setOption } = useReservation();
+  const { t } = useLanguage();
 
   const [recentDemandes, setRecentDemandes] = useState([]);
   const [nbTransporteurs, setNbTransporteurs] = useState(0);
@@ -207,7 +209,7 @@ function ExpéditeurHome({ user }) {
   };
 
   const _h        = new Date().getHours();
-  const salutation = _h >= 6 && _h < 18 ? 'Bonjour' : 'Bonsoir';
+  const salutation = _h >= 6 && _h < 18 ? t('bonjour') : t('bonsoir');
   const prenom     = user.nom.split(' ')[0];
 
   const lancerMaintenant = () => {
@@ -240,7 +242,7 @@ function ExpéditeurHome({ user }) {
       >
         <View style={{ marginBottom: 24 }}>
           <Text style={{ fontSize: 22, fontWeight: '800', color: '#0A0A0A', lineHeight: 30, letterSpacing: -0.3, marginBottom: 10 }}>
-            {"Où envoyez-vous votre marchandise ?"}
+            {t('ou_envoyez')}
           </Text>
           {nbTransporteurs > 0 && (
             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#BBF7D0' }}>
@@ -256,7 +258,7 @@ function ExpéditeurHome({ user }) {
         <TouchableOpacity style={nb.btnNoir} onPress={lancerMaintenant} activeOpacity={0.88}>
           <Text style={nb.emoji}>🚀</Text>
           <View style={{ flex: 1 }}>
-            <Text style={nb.title}>Maintenant</Text>
+            <Text style={nb.title}>{t('maintenant')}</Text>
             <Text style={nb.sub}>Trouver un transporteur disponible maintenant</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
@@ -266,7 +268,7 @@ function ExpéditeurHome({ user }) {
         <TouchableOpacity style={nb.btnBlanc} onPress={lancerPlanifie} activeOpacity={0.88}>
           <Text style={nb.emoji}>📅</Text>
           <View style={{ flex: 1 }}>
-            <Text style={[nb.title, { color: '#0A0A0A' }]}>Planifier</Text>
+            <Text style={[nb.title, { color: '#0A0A0A' }]}>{t('planifier')}</Text>
             <Text style={[nb.sub, { color: '#6B7280' }]}>Programmer une course pour plus tard</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#0A0A0A" />
@@ -750,108 +752,123 @@ function DemandeCard({ demande: d, onPress, onAccepter, showAccepter = false }) 
   const countdown   = msToCountdown(remainingMs);
   const isProche    = remainingMs != null && remainingMs > 0 && remainingMs < 6 * 3600000;
 
-  const fmtAccepterLabel = () => {
-    if (!d.date_souhaitee || d.date_souhaitee === 'Maintenant') return d.date_souhaitee;
-    const crInfo = CRENEAUX.find(c => c.key === d.creneau);
-    return `${d.date_souhaitee}${crInfo ? ` · ${crInfo.label}` : ''}`;
-  };
+  // Sous-catégorie libellé
+  const sousLabel = (() => {
+    if (!d.sous_categorie) return null;
+    const cats = SOUS_CATEGORIES[d.type_marchandise] || [];
+    return cats.find(sc => sc.key === d.sous_categorie)?.label || d.sous_categorie;
+  })();
+
+  // Véhicule recommandé libellé
+  const vehLabel = d.vehicule_recommande ? VEH_LABELS[d.vehicule_recommande] : null;
+  const vehIcon  = d.vehicule_recommande ? VEH_ICONS[d.vehicule_recommande] : 'car-outline';
 
   return (
     <TouchableOpacity style={[s.card, isUrgent && s.cardUrgent]} onPress={onPress} activeOpacity={0.88}>
-      {isUrgent && (
+      {/* Bannière urgence / countdown */}
+      {isUrgent ? (
         <View style={s.urgentBanner}>
           <Ionicons name="flash" size={12} color={C.error} style={{ marginRight: 6 }} />
           <Text style={s.urgentBannerTxt}>URGENT — Transport immédiat</Text>
         </View>
-      )}
-      {!isUrgent && countdown && (
+      ) : countdown ? (
         <View style={[s.urgentBanner, { backgroundColor: isProche ? '#FFF7ED' : '#F0FDF4', borderBottomColor: isProche ? '#FED7AA' : '#BBF7D0' }]}>
           <Ionicons name="alarm-outline" size={12} color={isProche ? C.accent : C.success} style={{ marginRight: 6 }} />
           <Text style={[s.urgentBannerTxt, { color: isProche ? C.accent : C.success }]}>{countdown}</Text>
         </View>
-      )}
+      ) : null}
 
-      <View style={s.cardTop}>
-        <View style={[s.cardIconBox, { backgroundColor: isUrgent ? C.errorLight : C.bgAlt }]}>
-          <Ionicons name={typeInfo?.icon || 'cube-outline'} size={26} color={isUrgent ? C.error : C.muted} />
+      {/* Trajet principal — grand et gras */}
+      <View style={dc.routeBlock}>
+        <View style={dc.routeRow}>
+          <View style={dc.routeDotGreen} />
+          <Text style={dc.routeCity} numberOfLines={1}>{d.ville_depart}</Text>
         </View>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={s.cardTypeTxt}>{typeInfo?.label || d.type_marchandise}</Text>
-          <View style={s.routeRowInner}>
-            <Text style={s.cityFrom}>{d.ville_depart}</Text>
-            <Ionicons name="arrow-forward" size={13} color={C.muted} style={{ marginHorizontal: 5 }} />
-            <Text style={s.cityTo}>{d.ville_arrivee}</Text>
-          </View>
+        <View style={dc.routeConnector}>
+          <View style={dc.routeLine} />
+          {distKm != null && (
+            <View style={dc.distBadge}>
+              <Ionicons name="navigate-outline" size={10} color={C.success} style={{ marginRight: 3 }} />
+              <Text style={dc.distTxt}>{fmtKm(distKm)}</Text>
+            </View>
+          )}
+          <View style={dc.routeLine} />
         </View>
+        <View style={dc.routeRow}>
+          <View style={dc.routeDotRed} />
+          <Text style={dc.routeCity} numberOfLines={1}>{d.ville_arrivee}</Text>
+        </View>
+      </View>
+
+      {/* Marchandise — type + sous-catégorie */}
+      <View style={dc.infoRow}>
+        <View style={[dc.infoIcon, { backgroundColor: isUrgent ? C.errorLight : C.bgAlt }]}>
+          <Ionicons name={typeInfo?.icon || 'cube-outline'} size={15} color={isUrgent ? C.error : C.muted} />
+        </View>
+        <Text style={dc.infoTxt} numberOfLines={1}>
+          {typeInfo?.label || d.type_marchandise}
+          {sousLabel ? <Text style={dc.infoSub}>{`  —  ${sousLabel}`}</Text> : null}
+        </Text>
         {d.nb_offres > 0 && (
-          <View style={s.offreBadge}>
-            <Text style={s.offreBadgeTxt}>{d.nb_offres} offre{d.nb_offres > 1 ? 's' : ''}</Text>
+          <View style={dc.offreBadge}>
+            <Text style={dc.offreTxt}>{d.nb_offres} offre{d.nb_offres > 1 ? 's' : ''}</Text>
           </View>
         )}
       </View>
 
-      <View style={s.cardMeta}>
+      {/* Véhicule requis */}
+      {vehLabel && (
+        <View style={dc.infoRow}>
+          <View style={[dc.infoIcon, { backgroundColor: '#EBF5FF' }]}>
+            <Ionicons name={vehIcon} size={15} color="#1A56DB" />
+          </View>
+          <Text style={[dc.infoTxt, { color: '#1A56DB' }]}>{vehLabel}</Text>
+        </View>
+      )}
+
+      {/* Timing */}
+      <View style={dc.infoRow}>
         {isUrgent ? (
-          <View style={[s.metaChip, { backgroundColor: C.errorLight, borderColor: '#FCA5A5' }]}>
-            <Ionicons name="flash" size={11} color={C.error} style={{ marginRight: 3 }} />
-            <Text style={[s.metaChipTxt, { color: C.error }]}>Maintenant</Text>
+          <View style={dc.timingUrgent}>
+            <Text style={dc.timingUrgentTxt}>Maintenant 🔴</Text>
           </View>
         ) : (
-          <>
-            <View style={s.metaChip}>
-              <Ionicons name="calendar-outline" size={11} color={C.muted} style={{ marginRight: 3 }} />
-              <Text style={s.metaChipTxt}>{d.date_souhaitee}</Text>
-            </View>
-            {creneauInfo && (
-              <View style={s.metaChip}>
-                <Ionicons name={creneauInfo.icon} size={11} color={C.muted} style={{ marginRight: 3 }} />
-                <Text style={s.metaChipTxt}>{creneauInfo.label}</Text>
-              </View>
-            )}
-            {isProche && countdown && (
-              <View style={[s.metaChip, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
-                <Ionicons name="alarm-outline" size={11} color={C.accent} style={{ marginRight: 3 }} />
-                <Text style={[s.metaChipTxt, { color: C.accent }]}>{countdown}</Text>
-              </View>
-            )}
-          </>
-        )}
-        {distKm != null && (
-          <View style={[s.metaChip, { backgroundColor: C.successLight, borderColor: '#6EE7B7' }]}>
-            <Ionicons name="navigate-outline" size={11} color={C.success} style={{ marginRight: 3 }} />
-            <Text style={[s.metaChipTxt, { color: C.success }]}>{fmtKm(distKm)}</Text>
+          <View style={dc.timingPlan}>
+            <Ionicons name="calendar-outline" size={12} color="#1A56DB" style={{ marginRight: 5 }} />
+            <Text style={dc.timingPlanTxt}>
+              {d.date_souhaitee}
+              {d.heure_souhaitee ? `  ·  ${d.heure_souhaitee}` : creneauInfo ? `  ·  ${creneauInfo.label}` : ''}
+              {'  🔵'}
+            </Text>
           </View>
         )}
-        {d.poids && (
-          <View style={s.metaChip}>
-            <Ionicons name="scale-outline" size={11} color={C.muted} style={{ marginRight: 3 }} />
-            <Text style={s.metaChipTxt}>{d.poids}</Text>
+        {isProche && countdown && !isUrgent && (
+          <View style={[dc.timingPlan, { backgroundColor: C.accentLight, borderColor: '#FED7AA', marginLeft: 6 }]}>
+            <Ionicons name="alarm-outline" size={12} color={C.accent} style={{ marginRight: 4 }} />
+            <Text style={[dc.timingPlanTxt, { color: C.accent }]}>{countdown}</Text>
           </View>
         )}
       </View>
 
-      {d.prix_estime > 0 && (
-        <View style={s.prixChip}>
-          <Ionicons name="cash-outline" size={12} color={C.success} style={{ marginRight: 5 }} />
-          <Text style={s.prixChipTxt}>À partir de {fmtPrix(d.prix_estime)}</Text>
-        </View>
-      )}
+      {/* Footer : prix + bouton */}
+      <View style={dc.footer}>
+        {d.prix_estime > 0 ? (
+          <View style={dc.prixBox}>
+            <Text style={dc.prixLabel}>Prix estimé</Text>
+            <Text style={dc.prixVal}>{fmtPrix(d.prix_estime)}</Text>
+          </View>
+        ) : <View />}
 
-      <View style={s.cardFooter}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Ionicons name="person-outline" size={13} color={C.muted} style={{ marginRight: 5 }} />
-          <Text style={s.clientTxt}>{d.expediteur_nom}</Text>
-        </View>
         {showAccepter && onAccepter ? (
-          <TouchableOpacity style={s.accepterBtn} onPress={onAccepter} activeOpacity={0.85}>
+          <TouchableOpacity style={dc.accepterBtn} onPress={onAccepter} activeOpacity={0.85}>
             <Ionicons name="checkmark-circle-outline" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
-            <Text style={s.accepterBtnTxt}>Accepter · {fmtAccepterLabel()}</Text>
+            <Text style={dc.accepterTxt}>Accepter</Text>
           </TouchableOpacity>
         ) : (
-          <View style={s.voirDetail}>
-            <Text style={s.voirDetailTxt}>Voir</Text>
-            <Ionicons name="chevron-forward" size={14} color={C.primary} />
-          </View>
+          <TouchableOpacity style={dc.voirBtn} onPress={onPress} activeOpacity={0.85}>
+            <Text style={dc.voirTxt}>Voir les détails</Text>
+            <Ionicons name="chevron-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
         )}
       </View>
     </TouchableOpacity>
@@ -1105,6 +1122,37 @@ const tg = StyleSheet.create({
   modalBtnTxt:   { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   modalBtnSecondary: { width: '100%', paddingVertical: 15, borderRadius: 50, alignItems: 'center', backgroundColor: C.bgAlt },
   modalBtnSecTxt:{ fontSize: 15, fontWeight: '700', color: C.text },
+});
+
+// ── DemandeCard redesign ─────────────────────────────────────
+const dc = StyleSheet.create({
+  routeBlock:    { marginBottom: 12 },
+  routeRow:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  routeDotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.success },
+  routeDotRed:   { width: 10, height: 10, borderRadius: 5, backgroundColor: C.error },
+  routeCity:     { fontSize: 17, fontWeight: '900', color: C.text, letterSpacing: -0.4, flex: 1 },
+  routeConnector:{ flexDirection: 'row', alignItems: 'center', marginLeft: 4, gap: 6, marginVertical: 4 },
+  routeLine:     { flex: 1, height: 1, backgroundColor: C.border },
+  distBadge:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 50, borderWidth: 1, borderColor: '#6EE7B7' },
+  distTxt:       { fontSize: 11, fontWeight: '700', color: C.success },
+  infoRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
+  infoIcon:      { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  infoTxt:       { fontSize: 14, fontWeight: '700', color: C.text, flex: 1 },
+  infoSub:       { fontSize: 14, fontWeight: '500', color: C.muted },
+  offreBadge:    { backgroundColor: C.successLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: '#6EE7B7' },
+  offreTxt:      { fontSize: 11, fontWeight: '800', color: C.success },
+  timingUrgent:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: '#FCA5A5' },
+  timingUrgentTxt: { fontSize: 12, fontWeight: '800', color: C.error },
+  timingPlan:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EBF5FF', borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: '#BFDBFE' },
+  timingPlanTxt: { fontSize: 12, fontWeight: '700', color: '#1A56DB' },
+  footer:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },
+  prixBox:       { gap: 1 },
+  prixLabel:     { fontSize: 10, fontWeight: '600', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 },
+  prixVal:       { fontSize: 18, fontWeight: '900', color: C.accent, letterSpacing: -0.4 },
+  voirBtn:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
+  voirTxt:       { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+  accepterBtn:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A56DB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
+  accepterTxt:   { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
 });
 
 // ── Boutons Maintenant / Planifier ───────────────────────────

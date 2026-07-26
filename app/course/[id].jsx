@@ -35,7 +35,25 @@ const STATUTS = {
 
 const TYPES_ICON = {
   meubles: 'grid-outline', electromenager: 'tv-outline', cartons: 'cube-outline',
-  materiaux: 'construct-outline', vehicule: 'car-outline', autre: 'ellipsis-horizontal-circle-outline',
+  alimentation: 'basket-outline', materiaux: 'construct-outline',
+  vehicule: 'car-outline', autre: 'ellipsis-horizontal-circle-outline',
+};
+
+const TYPES_LABEL = {
+  meubles: 'Meubles', electromenager: 'Électroménager', cartons: 'Cartons',
+  alimentation: 'Alimentation', materiaux: 'Matériaux BTP',
+  vehicule: 'Véhicule', autre: 'Autre',
+};
+
+const VEH_LABELS = {
+  herbine: 'Herbine (DFSK)', utilitaire: 'Utilitaire léger',
+  fourgon: 'Fourgon', camion35: 'Camion 3.5T',
+  camion10: 'Camion 10T', semi: 'Semi-remorque / Plateau',
+};
+
+const VEH_ICONS = {
+  herbine: 'cart-outline', utilitaire: 'car-outline', fourgon: 'car-sport-outline',
+  camion35: 'bus-outline', camion10: 'cube-outline', semi: 'construct-outline',
 };
 
 const RAISONS_ANNULATION = [
@@ -417,24 +435,100 @@ export default function DetailCourseScreen() {
               <Ionicons name={TYPES_ICON[demande.type_marchandise] || 'cube-outline'} size={26} color={C.muted} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.marchaType}>{demande.type_marchandise}</Text>
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              <Text style={s.marchaType}>
+                {TYPES_LABEL[demande.type_marchandise] || demande.type_marchandise}
+                {demande.sous_categorie ? (
+                  <Text style={{ color: C.muted, fontWeight: '500' }}>{`  —  ${demande.sous_categorie}`}</Text>
+                ) : null}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
                 {demande.poids && (
                   <View style={s.metaChip}>
                     <Ionicons name="scale-outline" size={11} color={C.muted} style={{ marginRight: 3 }} />
                     <Text style={s.metaChipTxt}>{demande.poids}</Text>
                   </View>
                 )}
-                <View style={s.metaChip}>
-                  <Ionicons name="calendar-outline" size={11} color={C.muted} style={{ marginRight: 3 }} />
-                  <Text style={s.metaChipTxt}>{demande.date_souhaitee}</Text>
-                </View>
+                {/* Options supplémentaires */}
+                {(() => {
+                  try {
+                    const opts = JSON.parse(demande.options_supplementaires || '{}');
+                    return [
+                      opts.fragile && { key: 'fragile', label: 'Fragile', icon: 'warning-outline', color: C.warning, bg: C.warningLight },
+                      opts.aide    && { key: 'aide',    label: 'Aide chargement', icon: 'people-outline', color: '#7C3AED', bg: '#F5F3FF' },
+                      opts.express && { key: 'express', label: 'Express', icon: 'flash-outline', color: C.accent, bg: C.accentLight },
+                      opts.etages > 0 && { key: 'etages', label: `${opts.etages} étage${opts.etages > 1 ? 's' : ''}`, icon: 'layers-outline', color: C.text, bg: C.bgAlt },
+                    ].filter(Boolean).map(opt => (
+                      <View key={opt.key} style={[s.metaChip, { backgroundColor: opt.bg, borderColor: opt.color }]}>
+                        <Ionicons name={opt.icon} size={11} color={opt.color} style={{ marginRight: 3 }} />
+                        <Text style={[s.metaChipTxt, { color: opt.color }]}>{opt.label}</Text>
+                      </View>
+                    ));
+                  } catch { return null; }
+                })()}
               </View>
             </View>
           </View>
           {demande.description ? (
             <View style={s.descBox}><Text style={s.descTxt}>{demande.description}</Text></View>
           ) : null}
+        </View>
+
+        {/* Véhicule requis */}
+        {demande.vehicule_recommande && (
+          <View style={s.card}>
+            <View style={s.cardTitleRow}>
+              <Ionicons name={VEH_ICONS[demande.vehicule_recommande] || 'bus-outline'} size={16} color={C.text} style={{ marginRight: 8 }} />
+              <Text style={s.cardTitle}>Véhicule requis</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: '#EBF5FF', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={VEH_ICONS[demande.vehicule_recommande] || 'bus-outline'} size={24} color="#1A56DB" />
+              </View>
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, letterSpacing: -0.2 }}>
+                  {VEH_LABELS[demande.vehicule_recommande] || demande.vehicule_recommande}
+                </Text>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Véhicule recommandé par l'expéditeur</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Timing */}
+        <View style={s.card}>
+          <View style={s.cardTitleRow}>
+            <Ionicons name="calendar-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
+            <Text style={s.cardTitle}>Quand</Text>
+          </View>
+          {demande.type_demande === 'maintenant' || demande.date_souhaitee === 'Maintenant' ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 42, height: 42, borderRadius: 10, backgroundColor: C.errorLight, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="flash" size={22} color={C.error} />
+              </View>
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: C.error }}>Maintenant 🔴</Text>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Transport immédiat demandé</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 42, height: 42, borderRadius: 10, backgroundColor: '#EBF5FF', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="calendar" size={22} color="#1A56DB" />
+              </View>
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>
+                  {demande.date_souhaitee}
+                  {demande.heure_souhaitee ? `  ·  ${demande.heure_souhaitee}` : ''}
+                  {'  🔵'}
+                </Text>
+                {demande.creneau && !demande.heure_souhaitee && (
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                    {({ matin: 'Matin (6h – 12h)', 'apres-midi': 'Après-midi (12h – 18h)', soir: 'Soir (18h – 22h)', flexible: 'Horaire flexible' })[demande.creneau]}
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Rémunération */}
@@ -535,12 +629,26 @@ export default function DetailCourseScreen() {
 
         {/* Accepter (transporteur non assigné) */}
         {demande.statut === 'en_attente' && !isMyOrder && isT && !suspension && (
-          <TouchableOpacity style={[s.actionBtn, acting && { opacity: 0.65 }]} onPress={() => handleAction('acceptee', `Accepter la course ${demande.ville_depart} → ${demande.ville_arrivee} ?`)} disabled={acting}>
-            {acting ? <ActivityIndicator color="#FFFFFF" /> : <>
-              <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={s.actionBtnTxt}>Accepter cette course</Text>
-            </>}
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: C.success }, acting && { opacity: 0.65 }]}
+              onPress={() => handleAction('acceptee', `Accepter la course ${demande.ville_depart} → ${demande.ville_arrivee} ?`)}
+              disabled={acting}
+            >
+              {acting ? <ActivityIndicator color="#FFFFFF" /> : <>
+                <Text style={{ fontSize: 20, marginRight: 8 }}>✅</Text>
+                <Text style={s.actionBtnTxt}>Accepter cette course</Text>
+              </>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.refuserBtn}
+              onPress={() => router.back()}
+              disabled={acting}
+            >
+              <Text style={{ fontSize: 18, marginRight: 8 }}>❌</Text>
+              <Text style={s.refuserTxt}>Pas intéressé</Text>
+            </TouchableOpacity>
+          </>
         )}
 
         {/* 🚀 Démarrer (pulsant) */}
@@ -867,6 +975,8 @@ const s = StyleSheet.create({
   actionBtnTxt:    { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   startBtn:        { backgroundColor: C.success },
   startEmoji:      { fontSize: 18, marginRight: 8 },
+  refuserBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 50, paddingVertical: 14, borderWidth: 1.5, borderColor: '#FCA5A5', backgroundColor: C.errorLight },
+  refuserTxt:      { fontSize: 14, fontWeight: '700', color: C.error },
 
   doneCard:    { backgroundColor: C.successLight, borderRadius: 12, padding: 24, alignItems: 'center', borderWidth: 1.5, borderColor: '#6EE7B7' },
   doneTxt:     { fontSize: 20, fontWeight: '800', color: C.success, marginBottom: 4 },

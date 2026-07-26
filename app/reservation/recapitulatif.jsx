@@ -113,6 +113,8 @@ export default function Recapitulatif() {
       const fmt = d =>
         `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 
+      const heureStr = fmtHeure(heure);
+
       const newDemandeId = demandesDB.create({
         expediteur_id:            user.id,
         ville_depart:             ctx.departure,
@@ -123,18 +125,31 @@ export default function Recapitulatif() {
         type_demande:             'planifie',
         date_souhaitee:           fmt(date),
         creneau:                  getCreneau(heure),
+        heure_souhaitee:          heureStr || null,
         prix_estime:              estim?.min ?? null,
         surge_coefficient:        estim?.surgeCoefficient ?? null,
         options_supplementaires:  JSON.stringify(opts),
         sous_categorie:           ctx.sousCategorie || null,
         vehicule_recommande:      ctx.vehicule || null,
       });
-      // Notifier tous les transporteurs locaux
+
+      // Notification riche pour les transporteurs
+      const vehLbl = TARIFS_BASE[ctx.vehicule]?.label || ctx.vehicule || '';
+      const typeLbl = TYPE_LABELS[ctx.category] || ctx.category;
+      const sousLbl = ctx.sousCategorie ? ` — ${ctx.sousCategorie}` : '';
+      const quandLbl = heureStr ? `${fmt(date)} à ${heureStr}` : fmt(date);
+      const notifMsg =
+        `🚛 Nouvelle course disponible\n` +
+        `📍 ${ctx.departure} → ${ctx.arrival}\n` +
+        `📦 ${typeLbl}${sousLbl}\n` +
+        `🚗 ${vehLbl}\n` +
+        `📅 ${quandLbl}`;
+
       try {
         const transporteurs = usersDB.getAllTransporteurs();
         for (const t of transporteurs) {
           if (t.id !== user.id) {
-            notifDB.create(t.id, `Nouvelle demande : ${ctx.departure} → ${ctx.arrival}`, NT.NOUVELLE_DEMANDE, { route: `/course/${newDemandeId}` });
+            notifDB.create(t.id, notifMsg, NT.NOUVELLE_DEMANDE, { route: `/course/${newDemandeId}` });
           }
         }
       } catch (_) {}

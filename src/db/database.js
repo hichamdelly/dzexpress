@@ -155,6 +155,7 @@ export function initDatabase() {
     `ALTER TABLE demandes ADD COLUMN dispatch_simule TEXT`,
     `ALTER TABLE demandes ADD COLUMN simule_dispatch_at TEXT`,
     `ALTER TABLE users ADD COLUMN heure_mise_en_ligne TEXT`,
+    `ALTER TABLE demandes ADD COLUMN heure_souhaitee TEXT`,
   ];
   // Table signalements (aide & support)
   try {
@@ -321,7 +322,7 @@ export const demandesDB = {
 
   create: ({ expediteur_id, ville_depart, ville_arrivee, description,
              type_marchandise, poids, date_souhaitee,
-             type_demande = 'planifie', creneau = null,
+             type_demande = 'planifie', creneau = null, heure_souhaitee = null,
              prix_estime = null, surge_coefficient = null,
              options_supplementaires = null,
              sous_categorie = null, vehicule_recommande = null,
@@ -329,12 +330,12 @@ export const demandesDB = {
     const r = getDB().runSync(
       `INSERT INTO demandes
          (expediteur_id, ville_depart, ville_arrivee, description,
-          type_marchandise, poids, date_souhaitee, type_demande, creneau,
+          type_marchandise, poids, date_souhaitee, type_demande, creneau, heure_souhaitee,
           prix_estime, surge_coefficient, options_supplementaires,
           sous_categorie, vehicule_recommande, avertissement_affiche)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [expediteur_id, ville_depart, ville_arrivee, description || null,
-       type_marchandise, poids || null, date_souhaitee, type_demande, creneau || null,
+       type_marchandise, poids || null, date_souhaitee, type_demande, creneau || null, heure_souhaitee || null,
        prix_estime, surge_coefficient, options_supplementaires,
        sous_categorie, vehicule_recommande, avertissement_affiche]
     );
