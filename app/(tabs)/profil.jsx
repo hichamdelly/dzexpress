@@ -9,6 +9,7 @@ import { useApp } from '../../src/context/AppContext';
 import { usersDB, gainsDB } from '../../src/db/database';
 import { searchVilles } from '../../src/utils/wilayas';
 import { fmtPrix } from '../../src/utils/pricing';
+import { useLanguage } from '../../src/i18n';
 
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
@@ -42,6 +43,7 @@ const VEHICULES = [
 export default function ProfilScreen() {
   const { user, logout, refreshUser } = useApp();
   const router = useRouter();
+  const { locale, setLanguage } = useLanguage();
 
   const [editing, setEditing]   = useState(false);
   const [nom, setNom]           = useState(user?.nom || '');
@@ -287,6 +289,37 @@ export default function ProfilScreen() {
         )}
       </View>
 
+      {/* Langue */}
+      <View style={[s.section, { marginTop: 8 }]}>
+        <View style={s.sectionHeader}>
+          <Ionicons name="language-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
+          <Text style={s.sectionTitle}>Langue / اللغة</Text>
+        </View>
+        <View style={s.langRow}>
+          <TouchableOpacity
+            style={[s.langBtn, locale === 'fr' && s.langBtnActive]}
+            onPress={() => setLanguage('fr')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.langBtnTxt, locale === 'fr' && s.langBtnTxtActive]}>FR</Text>
+            <Text style={[s.langBtnLabel, locale === 'fr' && s.langBtnTxtActive]}>Français</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.langBtn, locale === 'ar' && s.langBtnActive]}
+            onPress={() => setLanguage('ar')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.langBtnTxt, locale === 'ar' && s.langBtnTxtActive]}>AR</Text>
+            <Text style={[s.langBtnLabel, locale === 'ar' && s.langBtnTxtActive]}>العربية</Text>
+          </TouchableOpacity>
+        </View>
+        {locale === 'ar' && (
+          <Text style={s.langNote}>
+            {'قد يتطلب تفعيل اتجاه RTL إعادة تشغيل التطبيق'}
+          </Text>
+        )}
+      </View>
+
       {/* Aide & Support */}
       <TouchableOpacity style={s.aideBtn} onPress={() => router.push('/aide')} activeOpacity={0.85}>
         <View style={s.aideBtnLeft}>
@@ -442,6 +475,14 @@ const s = StyleSheet.create({
   logoExpress:  { color: C.text, fontSize: 16, fontWeight: '800' },
   aboutDesc:    { fontSize: 13, color: C.muted, lineHeight: 20, marginBottom: 8 },
   aboutVersion: { fontSize: 11, color: '#D1D5DB', fontWeight: '500' },
+
+  langRow:         { flexDirection: 'row', gap: 10, paddingTop: 4 },
+  langBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bg },
+  langBtnActive:   { borderColor: C.text, backgroundColor: C.text },
+  langBtnTxt:      { fontSize: 13, fontWeight: '800', color: C.muted },
+  langBtnLabel:    { fontSize: 14, fontWeight: '600', color: C.muted },
+  langBtnTxtActive:{ color: '#FFFFFF' },
+  langNote:        { fontSize: 11, color: C.muted, marginTop: 8, textAlign: 'center', lineHeight: 16 },
 
   aideBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.bg, marginHorizontal: 16, marginTop: 8, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, elevation: 2 },
   aideBtnLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },

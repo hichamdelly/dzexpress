@@ -2,9 +2,11 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppProvider } from '../src/context/AppContext';
 import { ReservationProvider } from '../src/context/ReservationContext';
+import { LanguageProvider } from '../src/i18n';
 
 export default function RootLayout() {
   return (
+    <LanguageProvider>
     <AppProvider>
       <ReservationProvider>
         <Stack screenOptions={{ headerShown: false }}>
@@ -19,5 +21,6 @@ export default function RootLayout() {
         <StatusBar style="auto" />
       </ReservationProvider>
     </AppProvider>
+    </LanguageProvider>
   );
 }
