@@ -187,6 +187,79 @@ export function initDatabase() {
       );
     `);
   } catch (_) {}
+
+  // ── Tables admin ─────────────────────────────────────────────
+  try {
+    d.execSync(`
+      CREATE TABLE IF NOT EXISTS logs_admin (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        gestionnaire_id INTEGER REFERENCES users(id),
+        action          TEXT NOT NULL,
+        details         TEXT,
+        created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (_) {}
+
+  try {
+    d.execSync(`
+      CREATE TABLE IF NOT EXISTS config_app (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        cle        TEXT NOT NULL UNIQUE,
+        valeur     TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (_) {}
+
+  try {
+    d.execSync(`
+      CREATE TABLE IF NOT EXISTS documents_transporteur (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        transporteur_id INTEGER NOT NULL REFERENCES users(id),
+        type_doc        TEXT NOT NULL,
+        uri             TEXT,
+        statut          TEXT DEFAULT 'en_attente',
+        motif_rejet     TEXT,
+        created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (_) {}
+
+  // ── Migrations admin ─────────────────────────────────────────
+  const adminMigrations = [
+    `ALTER TABLE users ADD COLUMN mot_de_passe TEXT`,
+    `ALTER TABLE users ADD COLUMN validation_statut TEXT DEFAULT 'en_attente'`,
+    `ALTER TABLE users ADD COLUMN motif_rejet_transporteur TEXT`,
+    `ALTER TABLE signalements ADD COLUMN user_nom TEXT`,
+    `ALTER TABLE signalements ADD COLUMN demande_id INTEGER`,
+  ];
+  for (const sql of adminMigrations) {
+    try { d.execSync(sql); } catch (_) {}
+  }
+
+  // ── Compte gestionnaire par défaut ────────────────────────────
+  try {
+    const admin = d.getFirstSync(`SELECT id FROM users WHERE type='gestionnaire' LIMIT 1`);
+    if (!admin) {
+      d.runSync(
+        `INSERT INTO users (nom, telephone, wilaya, type, mot_de_passe)
+         VALUES (?,?,?,?,?)`,
+        ['Admin DzExpress', '+213555000000', 'Alger', 'gestionnaire', 'admin123']
+      );
+    }
+  } catch (_) {}
+
+  // ── Tarifs par défaut dans config_app ────────────────────────
+  const defaultTarifs = [
+    ['tarif_fourgon_km', '45'],  ['tarif_fourgon_pec', '500'],
+    ['tarif_camion35_km', '65'], ['tarif_camion35_pec', '800'],
+    ['tarif_camion10_km', '90'], ['tarif_camion10_pec', '1200'],
+    ['tarif_semi_km', '130'],    ['tarif_semi_pec', '2000'],
+  ];
+  for (const [cle, valeur] of defaultTarifs) {
+    try { d.runSync(`INSERT OR IGNORE INTO config_app (cle, valeur) VALUES (?,?)`, [cle, valeur]); } catch (_) {}
+  }
 }
 
 // ── USERS ────────────────────────────────────────────────────
@@ -683,6 +756,155 @@ export const signalementsDB = {
     getDB().getAllSync(
       `SELECT * FROM signalements WHERE user_id=? ORDER BY created_at DESC`,
       [userId]
+    ),
+
+  getAll: () =>
+    getDB().getAllSync(
+      `SELECT s.*, u.nom AS user_nom, u.telephone AS user_tel
+       FROM signalements s LEFT JOIN users u ON s.user_id=u.id ORDER BY s.created_at DESC`
+    ),
+
+  traiter: (id) =>
+    getDB().runSync(`UPDATE signalements SET statut='traite' WHERE id=?`, [id]),
+};
+
+// ── ADMIN ────────────────────────────────────────────────────
+export const adminDB = {
+  login: (telephone, motDePasse) =>
+    getDB().getFirstSync(
+      `SELECT * FROM users WHERE telephone=? AND mot_de_passe=? AND type='gestionnaire'`,
+      [telephone, motDePasse]
+    ),
+
+  kpisJour: () => {
+    const d = getDB();
+    const today = new Date().toISOString().split('T')[0];
+    const coursesJour     = d.getFirstSync(`SELECT COUNT(*) AS n FROM demandes WHERE date(created_at)=?`, [today])?.n ?? 0;
+    const coursesCompletes = d.getFirstSync(`SELECT COUNT(*) AS n FROM demandes WHERE statut='livree' AND date(created_at)=?`, [today])?.n ?? 0;
+    const caJour          = d.getFirstSync(`SELECT COALESCE(SUM(montant+commission),0) AS t FROM gains_transporteur WHERE date(date)=?`, [today])?.t ?? 0;
+    const nouveauxUsers   = d.getFirstSync(`SELECT COUNT(*) AS n FROM users WHERE date(created_at)=? AND type!='gestionnaire'`, [today])?.n ?? 0;
+    return { coursesJour, coursesCompletes, caJour, nouveauxUsers };
+  },
+
+  statsGlobales: () => {
+    const d = getDB();
+    const totalExp   = d.getFirstSync(`SELECT COUNT(*) AS n FROM users WHERE type='expediteur'`)?.n ?? 0;
+    const totalTrans = d.getFirstSync(`SELECT COUNT(*) AS n FROM users WHERE type='transporteur'`)?.n ?? 0;
+    const total      = d.getFirstSync(`SELECT COUNT(*) AS n FROM demandes`)?.n ?? 0;
+    const completes  = d.getFirstSync(`SELECT COUNT(*) AS n FROM demandes WHERE statut='livree'`)?.n ?? 0;
+    const annulees   = d.getFirstSync(`SELECT COUNT(*) AS n FROM demandes WHERE statut='annulee'`)?.n ?? 0;
+    const caTotal    = d.getFirstSync(`SELECT COALESCE(SUM(montant+commission),0) AS t FROM gains_transporteur`)?.t ?? 0;
+    return { totalExp, totalTrans, total, completes, annulees, caTotal };
+  },
+
+  activite7Jours: () => {
+    const d = getDB();
+    const rows  = d.getAllSync(
+      `SELECT date(created_at) AS j, COUNT(*) AS n FROM demandes WHERE created_at >= date('now','-6 days') GROUP BY j`
+    );
+    const gains = d.getAllSync(
+      `SELECT date(date) AS j, COALESCE(SUM(montant+commission),0) AS ca FROM gains_transporteur WHERE date >= date('now','-6 days') GROUP BY j`
+    );
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const dt = new Date(); dt.setDate(dt.getDate() - i);
+      const jour = dt.toISOString().split('T')[0];
+      const lbl  = dt.toLocaleDateString('fr-FR', { weekday: 'short' }).slice(0, 3);
+      result.push({
+        jour, label: lbl,
+        courses: rows.find(r => r.j === jour)?.n ?? 0,
+        ca:      gains.find(g => g.j === jour)?.ca ?? 0,
+      });
+    }
+    return result;
+  },
+
+  getAllTransporteurs: () =>
+    getDB().getAllSync(
+      `SELECT u.*,
+              (SELECT COUNT(*) FROM gains_transporteur WHERE transporteur_id=u.id) AS nb_courses
+       FROM users u WHERE u.type='transporteur' ORDER BY u.created_at DESC`
+    ),
+
+  getAllUsers: () =>
+    getDB().getAllSync(`SELECT * FROM users WHERE type!='gestionnaire' ORDER BY created_at DESC`),
+
+  getDemandesActives: () =>
+    getDB().getAllSync(
+      `SELECT d.*, e.nom AS expediteur_nom, t.nom AS transporteur_nom
+       FROM demandes d
+       JOIN users e ON d.expediteur_id=e.id
+       LEFT JOIN users t ON d.transporteur_id=t.id
+       ORDER BY d.created_at DESC`
+    ),
+
+  validerTransporteur: (id) =>
+    getDB().runSync(`UPDATE users SET validation_statut='valide' WHERE id=?`, [id]),
+
+  rejeterTransporteur: (id, motif) =>
+    getDB().runSync(`UPDATE users SET validation_statut='rejete', motif_rejet_transporteur=? WHERE id=?`, [motif, id]),
+
+  suspendreTransporteur: (id) => {
+    const dt = new Date(); dt.setDate(dt.getDate() + 7);
+    getDB().runSync(`UPDATE users SET suspendu_jusqu_au=? WHERE id=?`, [dt.toISOString().split('T')[0], id]);
+  },
+
+  leverSuspension: (id) =>
+    getDB().runSync(`UPDATE users SET suspendu_jusqu_au=NULL WHERE id=?`, [id]),
+
+  getAllSignalements: () =>
+    getDB().getAllSync(
+      `SELECT s.*, u.nom AS user_nom, u.telephone AS user_tel
+       FROM signalements s LEFT JOIN users u ON s.user_id=u.id ORDER BY s.created_at DESC`
+    ),
+
+  traiterSignalement: (id) =>
+    getDB().runSync(`UPDATE signalements SET statut='traite' WHERE id=?`, [id]),
+};
+
+// ── CONFIG APP ───────────────────────────────────────────────
+export const configDB = {
+  get: (cle) =>
+    getDB().getFirstSync(`SELECT valeur FROM config_app WHERE cle=?`, [cle])?.valeur ?? null,
+
+  set: (cle, valeur) => {
+    const existing = getDB().getFirstSync(`SELECT id FROM config_app WHERE cle=?`, [cle]);
+    if (existing) {
+      getDB().runSync(`UPDATE config_app SET valeur=?, updated_at=CURRENT_TIMESTAMP WHERE cle=?`, [String(valeur), cle]);
+    } else {
+      getDB().runSync(`INSERT INTO config_app (cle, valeur) VALUES (?,?)`, [cle, String(valeur)]);
+    }
+  },
+
+  getAll: () => {
+    const rows = getDB().getAllSync(`SELECT * FROM config_app`);
+    return rows.reduce((acc, r) => ({ ...acc, [r.cle]: r.valeur }), {});
+  },
+
+  getTarifs: () => {
+    const all = configDB.getAll();
+    return {
+      fourgon:  { km: parseFloat(all.tarif_fourgon_km  || '45'),  pec: parseFloat(all.tarif_fourgon_pec  || '500') },
+      camion35: { km: parseFloat(all.tarif_camion35_km || '65'),  pec: parseFloat(all.tarif_camion35_pec || '800') },
+      camion10: { km: parseFloat(all.tarif_camion10_km || '90'),  pec: parseFloat(all.tarif_camion10_pec || '1200') },
+      semi:     { km: parseFloat(all.tarif_semi_km     || '130'), pec: parseFloat(all.tarif_semi_pec     || '2000') },
+    };
+  },
+};
+
+// ── LOGS ADMIN ───────────────────────────────────────────────
+export const logsAdminDB = {
+  create: (gestionnaire_id, action, details = null) =>
+    getDB().runSync(
+      `INSERT INTO logs_admin (gestionnaire_id, action, details) VALUES (?,?,?)`,
+      [gestionnaire_id, action, details ? JSON.stringify(details) : null]
+    ),
+
+  getRecent: (limit = 50) =>
+    getDB().getAllSync(
+      `SELECT l.*, u.nom AS gestionnaire_nom FROM logs_admin l
+       LEFT JOIN users u ON l.gestionnaire_id=u.id ORDER BY l.created_at DESC LIMIT ?`,
+      [limit]
     ),
 };
 

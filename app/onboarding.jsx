@@ -137,6 +137,15 @@ export default function OnboardingScreen() {
       </TouchableOpacity>
 
       <Text style={s.footerNote}>Gratuit · Sans commission · 100% Algérien</Text>
+
+      <TouchableOpacity
+        style={s.adminLink}
+        onPress={() => router.push('/admin/login')}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="shield-outline" size={12} color="#9CA3AF" style={{ marginRight: 4 }} />
+        <Text style={s.adminLinkTxt}>Accès gestionnaire</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -337,6 +346,8 @@ const s = StyleSheet.create({
   roleSub:   { fontSize: 13, color: C.muted, lineHeight: 18 },
 
   footerNote:{ textAlign: 'center', fontSize: 13, color: C.muted, marginTop: 32 },
+  adminLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16, paddingVertical: 8 },
+  adminLinkTxt: { fontSize: 11, color: '#9CA3AF' },
 
   // Étape 2 & 3
   backBtn:  { width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
