@@ -149,10 +149,43 @@ export function initDatabase() {
     `ALTER TABLE demandes ADD COLUMN sous_categorie TEXT`,
     `ALTER TABLE demandes ADD COLUMN vehicule_recommande TEXT`,
     `ALTER TABLE demandes ADD COLUMN avertissement_affiche INTEGER DEFAULT 0`,
+    `ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'info'`,
+    `ALTER TABLE notifications ADD COLUMN data_json TEXT`,
+    `ALTER TABLE users ADD COLUMN telephone_verifie INTEGER DEFAULT 1`,
+    `ALTER TABLE demandes ADD COLUMN dispatch_simule TEXT`,
+    `ALTER TABLE demandes ADD COLUMN simule_dispatch_at TEXT`,
+    `ALTER TABLE users ADD COLUMN heure_mise_en_ligne TEXT`,
   ];
+  // Table signalements (aide & support)
+  try {
+    d.execSync(`
+      CREATE TABLE IF NOT EXISTS signalements (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER REFERENCES users(id),
+        type       TEXT NOT NULL,
+        description TEXT NOT NULL,
+        statut     TEXT DEFAULT 'ouvert',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (_) {}
   for (const sql of migrations) {
     try { d.execSync(sql); } catch (_) {}
   }
+
+  // Table créneaux bloqués (agenda transporteur)
+  try {
+    d.execSync(`
+      CREATE TABLE IF NOT EXISTS creneaux_bloques (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        transporteur_id INTEGER NOT NULL REFERENCES users(id),
+        date            TEXT NOT NULL,
+        creneau         TEXT NOT NULL,
+        created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(transporteur_id, date, creneau)
+      );
+    `);
+  } catch (_) {}
 }
 
 // ── USERS ────────────────────────────────────────────────────
@@ -193,6 +226,22 @@ export const usersDB = {
   },
 
   // Suspend 7 jours si >= 3 annulations ce mois-ci ; retourne la date ou null
+  getAllTransporteurs: () =>
+    getDB().getAllSync(`SELECT id FROM users WHERE type = 'transporteur'`),
+
+  setDisponible: (id, disponible, heureISO = null) =>
+    getDB().runSync(
+      `UPDATE users SET disponible=?, heure_mise_en_ligne=? WHERE id=?`,
+      [disponible, heureISO, id]
+    ),
+
+  countTransporteursDisponibles: () => {
+    const row = getDB().getFirstSync(
+      `SELECT COUNT(*) AS n FROM users WHERE type='transporteur' AND disponible=1 AND telephone_verifie=1`
+    );
+    return row?.n ?? 0;
+  },
+
   checkAndSuspend: (userId) => {
     const count = getDB().getFirstSync(
       `SELECT COUNT(*) AS n FROM annulations
@@ -330,6 +379,53 @@ export const demandesDB = {
     getDB().runSync(
       `UPDATE demandes SET statut='en_attente', transporteur_id=NULL, accepted_at=NULL WHERE id=?`, [id]
     ),
+
+  // Simulation dispatch : demandes planifiées en attente non encore dispatché
+  getDispatchReady: () =>
+    getDB().getAllSync(
+      `SELECT d.*, e.nom AS expediteur_nom FROM demandes d
+       JOIN users e ON d.expediteur_id = e.id
+       WHERE d.type_demande='planifie' AND d.statut='en_attente' AND d.dispatch_simule IS NULL`
+    ),
+
+  markDispatched: (id) =>
+    getDB().runSync(
+      `UPDATE demandes SET dispatch_simule='dispatched', simule_dispatch_at=datetime('now') WHERE id=?`, [id]
+    ),
+
+  // Demandes dispatché depuis plus de 2 minutes → auto-acceptation
+  getReadyForAutoAccept: () =>
+    getDB().getAllSync(
+      `SELECT * FROM demandes
+       WHERE dispatch_simule='dispatched' AND statut='en_attente'
+         AND simule_dispatch_at <= datetime('now', '-2 minutes')`
+    ),
+
+  markAutoAccepted: (id) =>
+    getDB().runSync(
+      `UPDATE demandes SET dispatch_simule='auto_acceptee' WHERE id=?`, [id]
+    ),
+
+  // Pour l'agenda : courses d'un transporteur dans une plage de dates
+  getForAgenda: (transporteurId) =>
+    getDB().getAllSync(
+      `SELECT d.*, e.nom AS expediteur_nom FROM demandes d
+       JOIN users e ON d.expediteur_id = e.id
+       WHERE d.transporteur_id = ? AND d.statut IN ('acceptee','en_cours','livree')
+       ORDER BY d.date_souhaitee ASC, d.creneau ASC`,
+      [transporteurId]
+    ),
+
+  // Planifiées proches (dans les 48h) disponibles = "Courses à venir"
+  getPlanifieesProchaines: () =>
+    getDB().getAllSync(
+      `SELECT d.*, e.nom AS expediteur_nom,
+              (SELECT COUNT(*) FROM offres o WHERE o.demande_id=d.id) AS nb_offres
+       FROM demandes d
+       JOIN users e ON d.expediteur_id = e.id
+       WHERE d.type_demande='planifie' AND d.statut='en_attente'
+       ORDER BY d.date_souhaitee ASC, d.creneau ASC`
+    ),
 };
 
 // ── OFFRES ───────────────────────────────────────────────────
@@ -424,10 +520,10 @@ export const notifDB = {
       [userId]
     ),
 
-  create: (userId, message) =>
+  create: (userId, message, type = 'info', data = null) =>
     getDB().runSync(
-      `INSERT INTO notifications (user_id, message) VALUES (?, ?)`,
-      [userId, message]
+      `INSERT INTO notifications (user_id, message, type, data_json) VALUES (?, ?, ?, ?)`,
+      [userId, message, type || 'info', data ? JSON.stringify(data) : null]
     ),
 
   countUnread: (userId) =>
@@ -435,6 +531,9 @@ export const notifDB = {
       `SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND lu = 0`,
       [userId]
     )?.n ?? 0,
+
+  markRead: (id) =>
+    getDB().runSync(`UPDATE notifications SET lu = 1 WHERE id = ?`, [id]),
 
   markAllRead: (userId) =>
     getDB().runSync(`UPDATE notifications SET lu = 1 WHERE user_id = ?`, [userId]),
@@ -530,6 +629,60 @@ export const gainsDB = {
       nbCourses:d.getFirstSync(`SELECT COUNT(*) AS n FROM gains_transporteur WHERE transporteur_id=?`,                                           [userId])?.n             ?? 0,
     };
   },
+
+  getStatToday: (userId) => {
+    const today = new Date().toISOString().split('T')[0];
+    const d = getDB();
+    return {
+      gains:   d.getFirstSync(`SELECT COALESCE(SUM(montant),0) AS t FROM gains_transporteur WHERE transporteur_id=? AND date(date)=?`, [userId, today])?.t ?? 0,
+      courses: d.getFirstSync(`SELECT COUNT(*) AS n FROM gains_transporteur WHERE transporteur_id=? AND date(date)=?`, [userId, today])?.n ?? 0,
+    };
+  },
+};
+
+// ── AGENDA (créneaux bloqués) ────────────────────────────────
+export const agendaDB = {
+  getByTransporteur: (transporteurId) =>
+    getDB().getAllSync(
+      `SELECT * FROM creneaux_bloques WHERE transporteur_id=? ORDER BY date ASC, creneau ASC`,
+      [transporteurId]
+    ),
+
+  bloquer: (transporteurId, date, creneau) => {
+    try {
+      getDB().runSync(
+        `INSERT OR IGNORE INTO creneaux_bloques (transporteur_id, date, creneau) VALUES (?,?,?)`,
+        [transporteurId, date, creneau]
+      );
+    } catch (_) {}
+  },
+
+  debloquer: (transporteurId, date, creneau) =>
+    getDB().runSync(
+      `DELETE FROM creneaux_bloques WHERE transporteur_id=? AND date=? AND creneau=?`,
+      [transporteurId, date, creneau]
+    ),
+
+  isBloquer: (transporteurId, date, creneau) =>
+    (getDB().getFirstSync(
+      `SELECT 1 FROM creneaux_bloques WHERE transporteur_id=? AND date=? AND creneau=?`,
+      [transporteurId, date, creneau]
+    ) != null),
+};
+
+// ── SIGNALEMENTS ─────────────────────────────────────────────
+export const signalementsDB = {
+  create: ({ user_id, type, description }) =>
+    getDB().runSync(
+      `INSERT INTO signalements (user_id, type, description) VALUES (?, ?, ?)`,
+      [user_id || null, type, description]
+    ),
+
+  getByUser: (userId) =>
+    getDB().getAllSync(
+      `SELECT * FROM signalements WHERE user_id=? ORDER BY created_at DESC`,
+      [userId]
+    ),
 };
 
 // ── ANNULATIONS ──────────────────────────────────────────────

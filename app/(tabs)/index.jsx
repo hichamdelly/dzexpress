@@ -1,18 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput,
+  View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Platform, StatusBar, ActivityIndicator,
   Alert, KeyboardAvoidingView, RefreshControl,
+  Animated, Dimensions, Modal,
 } from 'react-native';
 import { Redirect, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { useApp } from '../../src/context/AppContext';
-import { demandesDB } from '../../src/db/database';
+import { useApp, parseDemandeTime, msToCountdown } from '../../src/context/AppContext';
+import { demandesDB, usersDB, offresDB, notifDB, agendaDB, gainsDB } from '../../src/db/database';
 import { getDistanceKm, fmtKm, WILAYA_COORDS } from '../../src/utils/wilayas';
 import { calculerPrix, calculerSurge, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
-import CityInput from '../../src/components/CityInput';
 import { useReservation } from '../../src/context/ReservationContext';
 
 function _haversine(lat1, lng1, lat2, lng2) {
@@ -43,6 +42,13 @@ const C = {
   error: '#EF4444', errorLight: '#FEF2F2',
   warning: '#F59E0B', warningLight: '#FFFBEB',
 };
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const TOGGLE_SIDE_PAD = 32; // 16px each side
+const TRACK_W   = SCREEN_W - TOGGLE_SIDE_PAD;
+const THUMB_W   = TRACK_W / 2 - 4;
+const THUMB_X_OFF = 4;
+const THUMB_X_ON  = TRACK_W / 2;
 
 const WILAYAS = [
   'Adrar','Aïn Defla','Aïn Témouchent','Alger','Annaba',
@@ -162,84 +168,23 @@ function ExpéditeurHome({ user }) {
   const router = useRouter();
   const { setField, reset, setOption } = useReservation();
 
-  const [mode, setMode]           = useState('instantane');
-  const [depart, setDepart]       = useState('');
-  const [arrivee, setArrivee]     = useState('');
-  const [type, setType]           = useState('');
-  const [poids, setPoids]         = useState('');
-  const [desc, setDesc]           = useState('');
-  const [date, setDate]           = useState(null);
-  const [heure, setHeure]         = useState(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [saving, setSaving]       = useState(false);
-
-  const [etages,  setEtages]  = useState(0);
-  const [aide,    setAide]    = useState(false);
-  const [fragile, setFragile] = useState(false);
-  const [express, setExpress] = useState(false);
-  const [showPrixDetail, setShowPrixDetail] = useState(false);
-
-  const [sousCategorie, setSousCategorie] = useState('');
-
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [gpsKey, setGpsKey]         = useState(0);
   const [recentDemandes, setRecentDemandes] = useState([]);
+  const [nbTransporteurs, setNbTransporteurs] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => {
+      try { setNbTransporteurs(usersDB.countTransporteursDisponibles()); } catch {}
+    };
+    refresh();
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   useFocusEffect(useCallback(() => {
     try {
       setRecentDemandes(demandesDB.getByExpediteur(user.id).slice(0, 3));
     } catch {}
   }, [user.id]));
-
-  const detectPosition = async () => {
-    setGpsLoading(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission refusée', 'Active la localisation dans les paramètres.');
-        return;
-      }
-      const pos     = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const wilaya  = nearestWilaya(pos.coords.latitude, pos.coords.longitude, WILAYAS);
-      if (wilaya) { setDepart(wilaya); setGpsKey(k => k + 1); }
-      else Alert.alert('Position introuvable', 'Saisis ta ville manuellement.');
-    } catch {
-      Alert.alert('GPS échoué', 'Vérifie que le GPS est activé.');
-    } finally {
-      setGpsLoading(false);
-    }
-  };
-
-  const getCreneau = (h) => {
-    if (!h) return 'flexible';
-    const hr = h.getHours();
-    if (hr >= 6  && hr < 12) return 'matin';
-    if (hr >= 12 && hr < 18) return 'apres-midi';
-    if (hr >= 18 && hr < 22) return 'soir';
-    return 'flexible';
-  };
-
-  const fmtHeureLabel = (h) => h
-    ? h.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-    : null;
-
-  const resetForm = () => {
-    setDepart(''); setArrivee(''); setType(''); setSousCategorie('');
-    setPoids(''); setDesc(''); setDate(null); setHeure(null);
-    setEtages(0); setAide(false); setFragile(false); setExpress(false);
-    setGpsKey(k => k + 1);
-  };
-
-  const ouvrirCarte = () => {
-    setField('mode', 'instantane');
-    router.push('/reservation/depart-arrivee');
-  };
-
-  const handlePublier = () => {
-    setField('mode', 'planifie');
-    router.push('/reservation/depart-arrivee');
-  };
 
   const refaire = (d) => {
     reset();
@@ -261,38 +206,31 @@ function ExpéditeurHome({ user }) {
     router.push('/reservation/recapitulatif');
   };
 
-  const fmtDateLabel = (d) => d
-    ? d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-    : null;
+  const _h        = new Date().getHours();
+  const salutation = _h >= 6 && _h < 18 ? 'Bonjour' : 'Bonsoir';
+  const prenom     = user.nom.split(' ')[0];
 
-  const _h             = new Date().getHours();
-  const salutation      = _h >= 6 && _h < 18 ? 'Bonjour' : 'Bonsoir';
-  const prenom          = user.nom.split(' ')[0];
-  const slogan          = _h >= 18 ? 'Une livraison de dernière minute ?' : 'Où envoyez-vous votre colis ?';
-  const nbTransporteurs = _h >= 7  && _h < 9  ? 12 + (_h % 4) :
-                          _h >= 16 && _h < 19  ? 11 + (_h % 5) :
-                          _h >= 9  && _h < 16  ?  7 + (_h % 4) :
-                          _h >= 19 && _h < 22  ?  5 + (_h % 3) :
-                                                   2 + (_h % 3);
+  const lancerMaintenant = () => {
+    setField('mode', 'instantane');
+    router.push('/reservation/depart-arrivee');
+  };
+
+  const lancerPlanifie = () => {
+    setField('mode', 'planifie');
+    router.push('/reservation/depart-arrivee');
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[s.header, { flexDirection: 'column', alignItems: 'stretch' }]}>
+      <View style={[s.header, { flexDirection: 'column', alignItems: 'stretch', backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }]}>
         <View style={hd.topRow}>
           <Logo />
-          <View style={s.headerBadge}>
-            <Ionicons name="cube-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-            <Text style={s.headerBadgeTxt}>Expéditeur</Text>
+          <View style={[s.headerBadge, { backgroundColor: '#FFF3E8', borderWidth: 1, borderColor: '#FDBA74' }]}>
+            <Ionicons name="cube-outline" size={13} color={C.accent} style={{ marginRight: 5 }} />
+            <Text style={[s.headerBadgeTxt, { color: C.accent }]}>Expéditeur</Text>
           </View>
         </View>
         <Text style={hd.salutation}>{salutation}, {prenom}</Text>
-        <Text style={hd.slogan}>{slogan}</Text>
-        {nbTransporteurs > 0 && (
-          <View style={hd.disponBadge}>
-            <View style={hd.greenDot} />
-            <Text style={hd.disponTxt}>{nbTransporteurs} transporteurs disponibles près de vous</Text>
-          </View>
-        )}
       </View>
 
       <ScrollView
@@ -300,409 +238,43 @@ function ExpéditeurHome({ user }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
       >
-        <View style={s.formCard}>
-          {/* Sélecteur mode */}
-          <Text style={s.whenTitle}>Quand avez-vous besoin du transport ?</Text>
-          <View style={s.modeCards}>
-            <TouchableOpacity
-              style={[s.modeCard, mode === 'instantane' && s.modeCardActive]}
-              onPress={() => setMode('instantane')} activeOpacity={0.85}
-            >
-              <Ionicons name="flash" size={22} color={mode === 'instantane' ? '#FFFFFF' : C.muted} />
-              <Text style={[s.modeCardTitle, mode === 'instantane' && { color: '#FFFFFF' }]}>Maintenant</Text>
-              <Text style={[s.modeCardSub, mode === 'instantane' && { color: 'rgba(255,255,255,0.6)' }]}>Choix direct du transporteur</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.modeCard, mode === 'planifie' && s.modeCardActive]}
-              onPress={() => { setMode('planifie'); }} activeOpacity={0.85}
-            >
-              <Ionicons name="calendar-outline" size={22} color={mode === 'planifie' ? '#FFFFFF' : C.muted} />
-              <Text style={[s.modeCardTitle, mode === 'planifie' && { color: '#FFFFFF' }]}>Choisir une heure</Text>
-              <Text style={[s.modeCardSub, mode === 'planifie' && { color: 'rgba(255,255,255,0.6)' }]}>Publier pour recevoir des offres</Text>
-            </TouchableOpacity>
-          </View>
-
-          {mode === 'instantane' && (
-            <View style={s.urgenceBanner}>
-              <Ionicons name="flash" size={14} color={C.error} style={{ marginRight: 6 }} />
-              <Text style={s.urgenceTxt}>
-                Ta demande sera marquée <Text style={{ fontWeight: '900' }}>URGENT</Text> — les transporteurs la verront en priorité
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: '#0A0A0A', lineHeight: 30, letterSpacing: -0.3, marginBottom: 10 }}>
+            {"Où envoyez-vous votre marchandise ?"}
+          </Text>
+          {nbTransporteurs > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#BBF7D0' }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#16A34A', marginRight: 6 }} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803D' }}>
+                {nbTransporteurs} transporteur{nbTransporteurs > 1 ? 's' : ''} disponible{nbTransporteurs > 1 ? 's' : ''} près de vous
               </Text>
             </View>
           )}
-
-          <Text style={s.formTitle}>Nouvelle demande</Text>
-          <Text style={s.formSub}>
-            {mode === 'instantane' ? 'Transport à effectuer dès maintenant' : 'Planifie à la date et l\'heure souhaitées'}
-          </Text>
-
-          {/* Route */}
-          <View style={s.routeBlock}>
-            <View style={s.gpsLabelRow}>
-              <Text style={s.fieldLabel}>Ville de départ</Text>
-              <TouchableOpacity
-                style={[s.gpsBtn, gpsLoading && { opacity: 0.6 }]}
-                onPress={detectPosition} disabled={gpsLoading}
-              >
-                {gpsLoading
-                  ? <ActivityIndicator size="small" color={C.accent} />
-                  : <>
-                      <Ionicons name="locate-outline" size={13} color={C.accent} />
-                      <Text style={s.gpsBtnTxt}>Ma position</Text>
-                    </>
-                }
-              </TouchableOpacity>
-            </View>
-
-            {depart && gpsKey > 0 && (
-              <View style={s.gpsFillBadge}>
-                <Ionicons name="location" size={14} color={C.success} style={{ marginRight: 6 }} />
-                <Text style={s.gpsFillTxt}>{depart}</Text>
-                <TouchableOpacity onPress={() => { setDepart(''); setGpsKey(k => k + 1); }}>
-                  <Ionicons name="close-circle" size={17} color="#9CA3AF" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <CityInput
-              key={`depart-${gpsKey}`}
-              value={depart}
-              onChange={setDepart}
-              accentColor={C.accent}
-              zIndex={20}
-              placeholder="Commune ou wilaya de départ…"
-            />
-
-            <View style={s.routeDivider}>
-              <View style={s.routeLine} />
-              <View style={s.routeIconBox}>
-                <Ionicons name="arrow-down" size={14} color={C.muted} />
-              </View>
-              <View style={s.routeLine} />
-            </View>
-
-            <Text style={s.fieldLabel}>Ville d'arrivée</Text>
-            <CityInput
-              value={arrivee}
-              onChange={setArrivee}
-              accentColor={C.accent}
-              zIndex={19}
-              placeholder="Commune ou wilaya d'arrivée…"
-            />
-          </View>
-
-          {/* Widget estimation de prix */}
-          {depart && arrivee && (() => {
-            const km    = getDistanceKm(depart, arrivee);
-            if (!km) return null;
-            const nbAct = demandesDB.countActives();
-            const surge = calculerSurge(nbAct);
-            const opts  = { etages, aide, fragile, express, nbActives: nbAct };
-            const estims = Object.entries(TARIFS_BASE).map(([veh]) => ({ veh, px: calculerPrix(km, veh, opts) }));
-            const fourgon = estims[0].px;
-            return (
-              <View style={px.box}>
-                <View style={px.headerRow}>
-                  <Ionicons name="wallet-outline" size={14} color={C.success} style={{ marginRight: 6 }} />
-                  <Text style={px.title}>Estimation de prix</Text>
-                  {surge.isForteDemande && (
-                    <View style={px.surgeBadge}>
-                      <Ionicons name="flame" size={10} color={C.error} style={{ marginRight: 3 }} />
-                      <Text style={px.surgeTxt}>Forte demande</Text>
-                    </View>
-                  )}
-                </View>
-                {surge.label && (
-                  <View style={px.surgeRow}>
-                    <Ionicons name="flash" size={12} color={C.accent} style={{ marginRight: 5 }} />
-                    <Text style={px.surgeLabel}>{surge.label} (+{surge.pct}%)</Text>
-                  </View>
-                )}
-                {estims.map(({ veh, px: p }) => (
-                  <View key={veh} style={px.row}>
-                    <Text style={px.vehTxt}>{TARIFS_BASE[veh].label}</Text>
-                    <Text style={px.rangeTxt}>{fmtPrix(p.min)} – {fmtPrix(p.max)}</Text>
-                  </View>
-                ))}
-                <TouchableOpacity style={px.detailBtn} onPress={() => setShowPrixDetail(v => !v)}>
-                  <Ionicons name={showPrixDetail ? 'chevron-up' : 'chevron-down'} size={12} color={C.success} style={{ marginRight: 4 }} />
-                  <Text style={px.detailBtnTxt}>Voir le détail du calcul</Text>
-                </TouchableOpacity>
-                {showPrixDetail && (
-                  <View style={px.detail}>
-                    <Text style={px.detailLine}>{fourgon.detail.km} km × {fourgon.detail.tarifKm} DA/km</Text>
-                    <Text style={px.detailLine}>Prise en charge : {fmtPrix(fourgon.detail.priseEnCharge)}</Text>
-                    <Text style={px.detailLine}>Base : {fmtPrix(fourgon.detail.baseAvantSurge)}</Text>
-                    {fourgon.detail.surgePct > 0 && (
-                      <Text style={[px.detailLine, { color: C.accent }]}>Surge ×{fourgon.surgeCoefficient.toFixed(2)} (+{fourgon.detail.surgePct}%)</Text>
-                    )}
-                    {fourgon.detail.fraisEtages > 0 && (
-                      <Text style={px.detailLine}>Étages : +{fmtPrix(fourgon.detail.fraisEtages)}</Text>
-                    )}
-                    {fourgon.detail.fraisAide > 0 && <Text style={px.detailLine}>Aide chargement : +500 DA</Text>}
-                    {fourgon.detail.fragile && <Text style={px.detailLine}>Fragile : +20%</Text>}
-                    {fourgon.detail.express && <Text style={px.detailLine}>Express : +40%</Text>}
-                    <Text style={[px.detailLine, { fontWeight: '900', color: C.primary, marginTop: 4 }]}>
-                      Total fourgon : {fmtPrix(fourgon.min)} – {fmtPrix(fourgon.max)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          })()}
-
-          {/* Type de marchandise */}
-          <Text style={s.fieldLabel}>Type de marchandise</Text>
-          <View style={s.typeGrid}>
-            {TYPES_MARCHANDISE.map(t => {
-              const active = type === t.key;
-              return (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[s.typeBtn, active && s.typeBtnActive]}
-                  onPress={() => { setType(t.key); setSousCategorie(''); }} activeOpacity={0.8}
-                >
-                  <Ionicons name={t.icon} size={26} color={active ? C.accent : '#9CA3AF'} />
-                  <Text style={[s.typeTxt, active && { color: C.accent, fontWeight: '700' }]}>{t.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Sous-catégorie */}
-          {(() => {
-            const scList = type ? SOUS_CATEGORIES[type] : null;
-            if (!scList?.length) return null;
-            const scInfo   = scList.find(s => s.key === sousCategorie);
-            const vehRec   = scInfo?.veh;
-            const vehRecArr = vehRec ? (Array.isArray(vehRec) ? vehRec : [vehRec]) : [];
-            const avertissement = scInfo?.warn;
-            return (
-              <>
-                <Text style={s.fieldLabel}>Précise le type</Text>
-                <View style={sc.chipRow}>
-                  {scList.map(sc_ => {
-                    const active = sousCategorie === sc_.key;
-                    return (
-                      <TouchableOpacity
-                        key={sc_.key}
-                        style={[sc.chip, active && sc.chipActive]}
-                        onPress={() => setSousCategorie(active ? '' : sc_.key)}
-                        activeOpacity={0.8}
-                      >
-                        {active && (
-                          <Ionicons name="checkmark-circle" size={13} color={C.accent} style={{ marginRight: 4 }} />
-                        )}
-                        <Text style={[sc.chipTxt, active && sc.chipTxtActive]}>{sc_.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {vehRecArr.length > 0 && (
-                  <View style={vr.box}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                      <Ionicons name="checkmark-circle" size={14} color={C.success} style={{ marginRight: 6 }} />
-                      <Text style={vr.title}>
-                        {vehRecArr.length > 1 ? 'Véhicules recommandés' : 'Véhicule recommandé'}
-                      </Text>
-                    </View>
-                    <View style={vr.grid}>
-                      {Object.keys(VEH_LABELS).map(key => {
-                        const isRec = vehRecArr.includes(key);
-                        return (
-                          <View key={key} style={[vr.card, isRec && vr.cardSelected]}>
-                            <Ionicons name={VEH_ICONS[key]} size={22} color={isRec ? C.accent : '#9CA3AF'} />
-                            <Text style={[vr.cardLabel, isRec && { color: C.accent, fontWeight: '800' }]}>
-                              {VEH_LABELS[key]}
-                            </Text>
-                            {isRec && (
-                              <View style={vr.recBadge}>
-                                <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                )}
-
-                {avertissement && (
-                  <View style={wn.box}>
-                    <Ionicons name="warning-outline" size={18} color="#92400E" style={{ marginRight: 10, marginTop: 1, flexShrink: 0 }} />
-                    <Text style={wn.txt}>{avertissement}</Text>
-                  </View>
-                )}
-              </>
-            );
-          })()}
-
-          {/* Poids */}
-          <Text style={s.fieldLabel}>Poids estimé</Text>
-          <TextInput
-            style={s.input}
-            placeholder="Ex : 500 kg, 2 tonnes…"
-            placeholderTextColor="#9CA3AF"
-            value={poids} onChangeText={setPoids}
-          />
-
-          {/* Date & Heure (mode planifie) */}
-          {mode === 'planifie' && (
-            <>
-              <Text style={s.fieldLabel}>Date & heure</Text>
-              <View style={s.dtRow}>
-                <TouchableOpacity
-                  style={[s.dtBtn, date && s.dtBtnFilled]}
-                  onPress={() => setShowDatePicker(true)}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="calendar-outline" size={16} color={date ? C.primary : '#9CA3AF'} style={{ marginRight: 7 }} />
-                  <Text style={[s.dtBtnTxt, !date && { color: '#9CA3AF' }]} numberOfLines={1}>
-                    {fmtDateLabel(date) ?? 'Choisir une date'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.dtBtn, heure && s.dtBtnFilled, { flex: 0.55 }]}
-                  onPress={() => setShowTimePicker(true)}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="time-outline" size={16} color={heure ? C.primary : '#9CA3AF'} style={{ marginRight: 7 }} />
-                  <Text style={[s.dtBtnTxt, !heure && { color: '#9CA3AF' }]}>
-                    {fmtHeureLabel(heure) ?? 'Heure'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {date && heure && (
-                <View style={s.dtSummary}>
-                  <Ionicons name={CRENEAUX.find(c => c.key === getCreneau(heure))?.icon || 'time-outline'} size={13} color={C.success} style={{ marginRight: 6 }} />
-                  <Text style={s.dtSummaryTxt}>
-                    {fmtDateLabel(date)} à {fmtHeureLabel(heure)} · créneau {CRENEAUX.find(c => c.key === getCreneau(heure))?.label}
-                  </Text>
-                </View>
-              )}
-
-              {showDatePicker && (
-                <DateTimePicker
-                  value={date || new Date()}
-                  mode="date"
-                  minimumDate={new Date()}
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                  onChange={(evt, d) => {
-                    if (Platform.OS !== 'ios') setShowDatePicker(false);
-                    if (d) setDate(d);
-                  }}
-                  style={{ marginBottom: 8 }}
-                />
-              )}
-              {Platform.OS === 'ios' && showDatePicker && (
-                <TouchableOpacity style={s.dtPickerDone} onPress={() => setShowDatePicker(false)}>
-                  <Text style={s.dtPickerDoneTxt}>Valider la date</Text>
-                </TouchableOpacity>
-              )}
-
-              {showTimePicker && (
-                <DateTimePicker
-                  value={heure || new Date()}
-                  mode="time"
-                  is24Hour
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(evt, d) => {
-                    if (Platform.OS !== 'ios') setShowTimePicker(false);
-                    if (d) setHeure(d);
-                  }}
-                  style={{ marginBottom: 8 }}
-                />
-              )}
-              {Platform.OS === 'ios' && showTimePicker && (
-                <TouchableOpacity style={s.dtPickerDone} onPress={() => setShowTimePicker(false)}>
-                  <Text style={s.dtPickerDoneTxt}>Valider l'heure</Text>
-                </TouchableOpacity>
-              )}
-            </>
-          )}
-
-          {/* Options supplémentaires */}
-          <Text style={s.fieldLabel}>Options</Text>
-          <View style={opt.section}>
-            <View style={opt.row}>
-              <View style={opt.optIcon}><Ionicons name="business-outline" size={17} color={C.muted} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={opt.optTitle}>Étages sans ascenseur</Text>
-                <Text style={opt.optSub}>+200 DA par étage (max 5)</Text>
-              </View>
-              <View style={opt.counter}>
-                <TouchableOpacity style={opt.counterBtn} onPress={() => setEtages(Math.max(0, etages - 1))}>
-                  <Text style={opt.counterBtnTxt}>−</Text>
-                </TouchableOpacity>
-                <Text style={opt.counterVal}>{etages}</Text>
-                <TouchableOpacity style={opt.counterBtn} onPress={() => setEtages(Math.min(5, etages + 1))}>
-                  <Text style={opt.counterBtnTxt}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <OptionToggle
-              icon="people-outline"
-              title="Aide au chargement/déchargement"
-              sub="+500 DA"
-              value={aide} onToggle={() => setAide(v => !v)}
-            />
-            <OptionToggle
-              icon="warning-outline"
-              title="Marchandise fragile"
-              sub="+20% sur le total"
-              value={fragile} onToggle={() => setFragile(v => !v)}
-            />
-            <OptionToggle
-              icon="flash-outline"
-              title="Livraison express (<2h)"
-              sub="+40% sur le total"
-              value={express} onToggle={() => setExpress(v => !v)}
-              last
-            />
-          </View>
-
-          {/* Description */}
-          <Text style={s.fieldLabel}>Description</Text>
-          <TextInput
-            style={[s.input, { minHeight: 70, textAlignVertical: 'top' }]}
-            placeholder="Dimensions, fragilité, accès difficile…"
-            placeholderTextColor="#9CA3AF"
-            value={desc} onChangeText={setDesc} multiline
-          />
-
-          {mode === 'instantane' ? (
-            <TouchableOpacity style={s.submitBtn} onPress={ouvrirCarte} activeOpacity={0.88}>
-              <Ionicons name="map-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <View>
-                <Text style={s.submitBtnTxt}>Voir les transporteurs</Text>
-                <Text style={s.submitBtnSub}>Choisis sur la carte</Text>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[s.submitBtn, saving && { opacity: 0.6 }]}
-              onPress={handlePublier} disabled={saving} activeOpacity={0.88}
-            >
-              {saving
-                ? <ActivityIndicator color="#FFFFFF" />
-                : <>
-                    <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <View>
-                      <Text style={s.submitBtnTxt}>Publier dans la marketplace</Text>
-                      <Text style={s.submitBtnSub}>Les transporteurs feront des offres</Text>
-                    </View>
-                  </>
-              }
-            </TouchableOpacity>
-          )}
         </View>
+
+        {/* Bouton Maintenant */}
+        <TouchableOpacity style={nb.btnNoir} onPress={lancerMaintenant} activeOpacity={0.88}>
+          <Text style={nb.emoji}>🚀</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={nb.title}>Maintenant</Text>
+            <Text style={nb.sub}>Trouver un transporteur disponible maintenant</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        {/* Bouton Planifier */}
+        <TouchableOpacity style={nb.btnBlanc} onPress={lancerPlanifie} activeOpacity={0.88}>
+          <Text style={nb.emoji}>📅</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[nb.title, { color: '#0A0A0A' }]}>Planifier</Text>
+            <Text style={[nb.sub, { color: '#6B7280' }]}>Programmer une course pour plus tard</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#0A0A0A" />
+        </TouchableOpacity>
 
         {/* Vos dernières demandes */}
         {recentDemandes.length > 0 && (
-          <View style={qs.section}>
+          <View style={[qs.section, { marginTop: 12 }]}>
             <Text style={qs.sectionTitle}>Vos dernières demandes</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               nestedScrollEnabled keyboardShouldPersistTaps="handled"
@@ -763,23 +335,12 @@ function ExpéditeurHome({ user }) {
           </ScrollView>
         </View>
 
-        {/* Comment ça marche */}
-        <View style={s.infoBox}>
-          <Text style={s.infoTitle}>Comment ça marche ?</Text>
-          {[
-            { icon: 'create-outline',        txt: 'Tu publies une demande (urgente ou planifiée)' },
-            { icon: 'notifications-outline', txt: 'Les transporteurs disponibles la voient' },
-            { icon: 'chatbubble-outline',     txt: 'Un transporteur te fait une offre de prix' },
-            { icon: 'checkmark-circle-outline', txt: 'Tu acceptes et il vient chercher ta marchandise' },
-          ].map((item, i) => (
-            <View key={i} style={s.infoStep}>
-              <Ionicons name={item.icon} size={16} color={C.accent} style={{ marginRight: 10, marginTop: 1 }} />
-              <Text style={s.infoStepTxt}>{item.txt}</Text>
-            </View>
-          ))}
-        </View>
+        {/* Lien aide discret */}
+        <TouchableOpacity style={s.aideLink} onPress={() => router.push('/aide')} activeOpacity={0.7}>
+          <Ionicons name="help-circle-outline" size={15} color={C.muted} style={{ marginRight: 6 }} />
+          <Text style={s.aideLinkTxt}>{"Besoin d'aide ?"}</Text>
+        </TouchableOpacity>
       </ScrollView>
-
     </KeyboardAvoidingView>
   );
 }
@@ -805,28 +366,154 @@ function OptionToggle({ icon, title, sub, value, onToggle, last }) {
 function TransporteurHome({ user }) {
   const router = useRouter();
 
+  // ── En ligne / Hors ligne ──────────────────────────────────
+  const [disponible, setDisponible]         = useState(user.disponible === 1);
+  const [heureMiseEnLigne, setHeureMiseEnLigne] = useState(null);
+  const [dureeEnLigne, setDureeEnLigne]     = useState('');
+  const [showOfflineModal, setShowOfflineModal] = useState(false);
+  const [statsToday, setStatsToday]         = useState({ gains: 0, courses: 0 });
+  const toggleAnim = useRef(new Animated.Value(user.disponible === 1 ? 1 : 0)).current;
+
+  // ── Demandes ───────────────────────────────────────────────
   const [demandes, setDemandes]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [urgFilter, setUrgFilter]   = useState('tous');
   const [typeFilter, setTypeFilter] = useState('');
+  const [prochaines, setProchaines] = useState([]);
 
+  const PROCHAINES_HEURES = 48;
+
+  // Charge l'heure de mise en ligne depuis la DB au montage
+  useEffect(() => {
+    try {
+      const u = usersDB.getById(user.id);
+      if (u?.disponible === 1 && u?.heure_mise_en_ligne) {
+        setHeureMiseEnLigne(u.heure_mise_en_ligne);
+      }
+    } catch {}
+  }, [user.id]);
+
+  // Compteur de durée (mise à jour toutes les minutes)
+  useEffect(() => {
+    if (!disponible || !heureMiseEnLigne) { setDureeEnLigne(''); return; }
+    const calc = () => {
+      const mins = Math.floor((Date.now() - new Date(heureMiseEnLigne).getTime()) / 60000);
+      if (mins < 1)   { setDureeEnLigne('quelques secondes'); return; }
+      if (mins < 60)  { setDureeEnLigne(`${mins} min`); return; }
+      const h = Math.floor(mins / 60), m = mins % 60;
+      setDureeEnLigne(m > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${h}h`);
+    };
+    calc();
+    const id = setInterval(calc, 60_000);
+    return () => clearInterval(id);
+  }, [disponible, heureMiseEnLigne]);
+
+  // Stats du jour
+  const loadStats = useCallback(() => {
+    try { setStatsToday(gainsDB.getStatToday(user.id)); } catch {}
+  }, [user.id]);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
+
+  // Valeurs animées pour le toggle
+  const trackBg = toggleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#E5E7EB', '#10B981'],
+  });
+  const thumbX = toggleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [THUMB_X_OFF, THUMB_X_ON],
+  });
+
+  // ── Handlers toggle ───────────────────────────────────────
+  const goOnline = () => {
+    const now = new Date().toISOString();
+    try {
+      usersDB.setDisponible(user.id, 1, now);
+      setDisponible(true);
+      setHeureMiseEnLigne(now);
+      Animated.timing(toggleAnim, { toValue: 1, duration: 280, useNativeDriver: false }).start();
+      setLoading(true);
+      fetchDemandes();
+    } catch (e) { Alert.alert('Erreur', e.message); }
+  };
+
+  const goOffline = () => {
+    try {
+      usersDB.setDisponible(user.id, 0, null);
+      setDisponible(false);
+      setHeureMiseEnLigne(null);
+      setDureeEnLigne('');
+      Animated.timing(toggleAnim, { toValue: 0, duration: 280, useNativeDriver: false }).start();
+    } catch (e) { Alert.alert('Erreur', e.message); }
+  };
+
+  const handleToggle = () => {
+    if (disponible) {
+      try {
+        const courseActive = demandesDB.getByTransporteur(user.id)
+          .find(d => ['acceptee', 'en_route', 'en_cours'].includes(d.statut));
+        if (courseActive) { setShowOfflineModal(true); return; }
+      } catch {}
+      goOffline();
+    } else {
+      goOnline();
+    }
+  };
+
+  // ── Chargement des demandes ───────────────────────────────
   const fetchDemandes = useCallback(() => {
     try {
       setDemandes(demandesDB.getDisponibles(urgFilter !== 'tous' ? urgFilter : null));
+      const all = demandesDB.getPlanifieesProchaines();
+      const now = Date.now();
+      setProchaines(all.filter(d => {
+        const ms = parseDemandeTime(d.date_souhaitee, d.creneau);
+        return ms && ms - now > 0 && ms - now < PROCHAINES_HEURES * 3600000;
+      }));
+      loadStats();
     } catch (e) { console.log('fetch error:', e.message); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [urgFilter]);
+  }, [urgFilter, loadStats]);
 
   useState(() => { fetchDemandes(); }, []);
 
   const onUrgFilterChange = (val) => {
     setUrgFilter(val);
     setLoading(true);
-    try {
-      setDemandes(demandesDB.getDisponibles(val !== 'tous' ? val : null));
-    } catch (e) { console.log(e.message); }
+    try { setDemandes(demandesDB.getDisponibles(val !== 'tous' ? val : null)); }
+    catch (e) { console.log(e.message); }
     finally { setLoading(false); }
+  };
+
+  const accepterCourse = (demande) => {
+    Alert.alert(
+      'Accepter cette course ?',
+      `${demande.ville_depart} → ${demande.ville_arrivee}\n${demande.date_souhaitee}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Accepter', onPress: () => {
+          try {
+            const offreId = offresDB.create({
+              demande_id: demande.id,
+              transporteur_id: user.id,
+              prix_propose: demande.prix_estime || null,
+              message: 'Réservation course planifiée',
+            });
+            offresDB.accepter(offreId, demande.id, user.id);
+            notifDB.create(
+              demande.expediteur_id,
+              `Un transporteur a accepté votre course ${demande.ville_depart} → ${demande.ville_arrivee}`,
+              'course_acceptee',
+              { route: `/demande/${demande.id}` }
+            );
+            fetchDemandes();
+            Alert.alert('Course ajoutée !', 'Elle apparaît maintenant dans votre agenda.');
+          } catch (e) { Alert.alert('Erreur', e.message); }
+        }},
+      ]
+    );
   };
 
   const displayed     = typeFilter ? demandes.filter(d => d.type_marchandise === typeFilter) : demandes;
@@ -835,94 +522,239 @@ function TransporteurHome({ user }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bgAlt }}>
+      {/* Header */}
       <View style={s.header}>
         <Logo />
         <View style={[s.headerBadge, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
           <Ionicons name="car-sport-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-          <Text style={s.headerBadgeTxt}>{demandes.length} demande{demandes.length !== 1 ? 's' : ''}</Text>
+          <Text style={s.headerBadgeTxt}>Transporteur</Text>
         </View>
       </View>
 
-      {/* Filtre Urgent / Planifié / Tous */}
-      <View style={s.urgFilterBar}>
-        {[
-          { key: 'tous',       iconName: 'search-outline',   label: 'Tous',     count: demandes.length },
-          { key: 'maintenant', iconName: 'flash-outline',    label: 'Urgent',   count: urgentCount },
-          { key: 'planifie',   iconName: 'calendar-outline', label: 'Planifié', count: planifieCount },
-        ].map(f => {
-          const active = urgFilter === f.key;
-          return (
-            <TouchableOpacity
-              key={f.key}
-              style={[s.urgBtn, active && s.urgBtnActive]}
-              onPress={() => onUrgFilterChange(f.key)} activeOpacity={0.85}
-            >
-              <Ionicons name={f.iconName} size={14} color={active ? '#FFFFFF' : C.muted} />
-              <Text style={[s.urgBtnTxt, active && { color: '#FFFFFF' }]}>{f.label}</Text>
-              {f.count > 0 && (
-                <View style={[s.urgCount, active && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-                  <Text style={[s.urgCountTxt, active && { color: '#FFFFFF' }]}>{f.count}</Text>
-                </View>
+      {/* ── Toggle En ligne / Hors ligne ── */}
+      <View style={tg.section}>
+        <TouchableOpacity onPress={handleToggle} activeOpacity={0.92}>
+          <Animated.View style={[tg.track, { backgroundColor: trackBg }]}>
+            {/* Thumb blanc glissant */}
+            <Animated.View style={[tg.thumb, { width: THUMB_W, transform: [{ translateX: thumbX }] }]} />
+            {/* Labels côte à côte */}
+            <View style={tg.segments} pointerEvents="none">
+              <View style={tg.segment}>
+                <Ionicons
+                  name="moon-outline" size={15}
+                  color={disponible ? 'rgba(255,255,255,0.45)' : '#4B5563'}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[tg.segLabel, { color: disponible ? 'rgba(255,255,255,0.45)' : '#374151' }]}>
+                  Hors ligne
+                </Text>
+              </View>
+              <View style={tg.segment}>
+                <Ionicons
+                  name="radio-button-on" size={15}
+                  color={disponible ? '#FFFFFF' : 'rgba(107,114,128,0.45)'}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[tg.segLabel, { color: disponible ? '#FFFFFF' : 'rgba(107,114,128,0.45)' }]}>
+                  En ligne
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
+
+        {/* Message de statut */}
+        <Text style={[tg.statusMsg, { color: disponible ? C.success : C.muted }]}>
+          {disponible
+            ? `Vous êtes visible par les expéditeurs 🟢${dureeEnLigne ? `  ·  En ligne depuis ${dureeEnLigne}` : ''}`
+            : 'Passez en ligne pour recevoir des courses'}
+        </Text>
+
+        {/* Stats rapides (quand en ligne et courses réalisées aujourd'hui) */}
+        {disponible && (statsToday.courses > 0 || statsToday.gains > 0) && (
+          <View style={tg.statsRow}>
+            <Ionicons name="today-outline" size={13} color={C.muted} style={{ marginRight: 6 }} />
+            <Text style={tg.statsTxt}>
+              {"Aujourd'hui : "}
+              <Text style={{ fontWeight: '800', color: C.text }}>
+                {statsToday.courses} course{statsToday.courses !== 1 ? 's' : ''}
+              </Text>
+              {statsToday.gains > 0 && (
+                <>
+                  {'  ·  '}
+                  <Text style={{ fontWeight: '800', color: C.success }}>{fmtPrix(statsToday.gains)}</Text>
+                  {' gagnés'}
+                </>
               )}
-            </TouchableOpacity>
-          );
-        })}
+            </Text>
+          </View>
+        )}
       </View>
 
-      {/* Filtre type marchandise */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        style={s.typeFilterBar}
-        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 7 }}>
-        <TouchableOpacity style={[s.typeChip, !typeFilter && s.typeChipActive]} onPress={() => setTypeFilter('')}>
-          <Text style={[s.typeChipTxt, !typeFilter && { color: '#FFFFFF' }]}>Tout</Text>
-        </TouchableOpacity>
-        {TYPES_MARCHANDISE.map(t => (
-          <TouchableOpacity
-            key={t.key}
-            style={[s.typeChip, typeFilter === t.key && s.typeChipActive]}
-            onPress={() => setTypeFilter(typeFilter === t.key ? '' : t.key)}
-          >
-            <Ionicons name={t.icon} size={13} color={typeFilter === t.key ? '#FFFFFF' : C.muted} style={{ marginRight: 4 }} />
-            <Text style={[s.typeChipTxt, typeFilter === t.key && { color: '#FFFFFF' }]}>{t.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Liste */}
-      {loading ? (
-        <View style={s.center}><ActivityIndicator size="large" color={C.primary} /></View>
-      ) : displayed.length === 0 ? (
+      {/* ── Contenu conditionnel (offline / online) ── */}
+      {!disponible ? (
         <View style={s.center}>
-          <View style={s.emptyIcon}>
-            <Ionicons name={urgFilter === 'maintenant' ? 'flash-outline' : urgFilter === 'planifie' ? 'calendar-outline' : 'search-outline'} size={32} color="#D1D5DB" />
+          <View style={[s.emptyIcon, { backgroundColor: '#F3F4F6', width: 72, height: 72, borderRadius: 36 }]}>
+            <Ionicons name="car-sport-outline" size={34} color="#9CA3AF" />
           </View>
-          <Text style={s.emptyTitle}>
-            {urgFilter === 'maintenant' ? 'Aucune urgence' : urgFilter === 'planifie' ? 'Aucune planifiée' : 'Aucune demande'}
-          </Text>
-          <Text style={s.emptyDesc}>Reviens dans quelques minutes</Text>
+          <Text style={s.emptyTitle}>Vous êtes hors ligne</Text>
+          <Text style={s.emptyDesc}>Activez le toggle pour recevoir{'\n'}des demandes de courses</Text>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: 90 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchDemandes(); }} tintColor={C.primary} />
-          }
-        >
-          <Text style={s.countTxt}>{displayed.length} demande{displayed.length > 1 ? 's' : ''}</Text>
-          {displayed.map(d => (
-            <DemandeCard key={d.id} demande={d} onPress={() => router.push(`/course/${d.id}`)} />
-          ))}
-        </ScrollView>
+        <>
+          {/* Filtre Urgent / Planifié / Tous */}
+          <View style={s.urgFilterBar}>
+            {[
+              { key: 'tous',       iconName: 'search-outline',   label: 'Tous',     count: demandes.length },
+              { key: 'maintenant', iconName: 'flash-outline',    label: 'Urgent',   count: urgentCount },
+              { key: 'planifie',   iconName: 'calendar-outline', label: 'Planifié', count: planifieCount },
+            ].map(f => {
+              const active = urgFilter === f.key;
+              return (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[s.urgBtn, active && s.urgBtnActive]}
+                  onPress={() => onUrgFilterChange(f.key)} activeOpacity={0.85}
+                >
+                  <Ionicons name={f.iconName} size={14} color={active ? '#FFFFFF' : C.muted} />
+                  <Text style={[s.urgBtnTxt, active && { color: '#FFFFFF' }]}>{f.label}</Text>
+                  {f.count > 0 && (
+                    <View style={[s.urgCount, active && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                      <Text style={[s.urgCountTxt, active && { color: '#FFFFFF' }]}>{f.count}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Filtre type marchandise */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            style={s.typeFilterBar}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 7 }}>
+            <TouchableOpacity style={[s.typeChip, !typeFilter && s.typeChipActive]} onPress={() => setTypeFilter('')}>
+              <Text style={[s.typeChipTxt, !typeFilter && { color: '#FFFFFF' }]}>Tout</Text>
+            </TouchableOpacity>
+            {TYPES_MARCHANDISE.map(t => (
+              <TouchableOpacity
+                key={t.key}
+                style={[s.typeChip, typeFilter === t.key && s.typeChipActive]}
+                onPress={() => setTypeFilter(typeFilter === t.key ? '' : t.key)}
+              >
+                <Ionicons name={t.icon} size={13} color={typeFilter === t.key ? '#FFFFFF' : C.muted} style={{ marginRight: 4 }} />
+                <Text style={[s.typeChipTxt, typeFilter === t.key && { color: '#FFFFFF' }]}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Courses à venir */}
+          {prochaines.length > 0 && (
+            <View style={s.prochSection}>
+              <View style={s.prochHeader}>
+                <Ionicons name="alarm-outline" size={15} color={C.accent} style={{ marginRight: 6 }} />
+                <Text style={s.prochTitle}>Courses à venir</Text>
+                <View style={s.prochBadge}><Text style={s.prochBadgeTxt}>{prochaines.length}</Text></View>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 12, gap: 10 }}>
+                {prochaines.map(d => {
+                  const ms = parseDemandeTime(d.date_souhaitee, d.creneau);
+                  const rem = ms ? ms - Date.now() : null;
+                  const cd = msToCountdown(rem);
+                  const isProche = rem != null && rem < 3 * 3600000;
+                  return (
+                    <View key={d.id} style={s.prochCard}>
+                      {cd && (
+                        <View style={[s.prochCdBadge, { backgroundColor: isProche ? C.accentLight : C.successLight }]}>
+                          <Ionicons name="alarm" size={11} color={isProche ? C.accent : C.success} style={{ marginRight: 4 }} />
+                          <Text style={[s.prochCdTxt, { color: isProche ? C.accent : C.success }]}>{cd}</Text>
+                        </View>
+                      )}
+                      <Text style={s.prochRoute} numberOfLines={1}>{d.ville_depart} → {d.ville_arrivee}</Text>
+                      <Text style={s.prochDate}>{d.date_souhaitee} · {CRENEAUX.find(c => c.key === d.creneau)?.label || ''}</Text>
+                      {d.prix_estime > 0 && <Text style={s.prochPrix}>{fmtPrix(d.prix_estime)}</Text>}
+                      <TouchableOpacity style={s.prochAccepterBtn} onPress={() => accepterCourse(d)} activeOpacity={0.85}>
+                        <Ionicons name="checkmark-circle-outline" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                        <Text style={s.prochAccepterTxt}>Accepter</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Liste principale */}
+          {loading ? (
+            <View style={s.center}><ActivityIndicator size="large" color={C.primary} /></View>
+          ) : displayed.length === 0 ? (
+            <View style={s.center}>
+              <View style={s.emptyIcon}>
+                <Ionicons name={urgFilter === 'maintenant' ? 'flash-outline' : urgFilter === 'planifie' ? 'calendar-outline' : 'search-outline'} size={32} color="#D1D5DB" />
+              </View>
+              <Text style={s.emptyTitle}>
+                {urgFilter === 'maintenant' ? 'Aucune urgence' : urgFilter === 'planifie' ? 'Aucune planifiée' : 'Aucune demande'}
+              </Text>
+              <Text style={s.emptyDesc}>Reviens dans quelques minutes</Text>
+            </View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: 90 }}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchDemandes(); }} tintColor={C.primary} />
+              }
+            >
+              <Text style={s.countTxt}>{displayed.length} demande{displayed.length > 1 ? 's' : ''}</Text>
+              {displayed.map(d => (
+                <DemandeCard key={d.id} demande={d} onPress={() => router.push(`/course/${d.id}`)} />
+              ))}
+            </ScrollView>
+          )}
+        </>
       )}
+
+      {/* ── Modal confirmation passage hors ligne ── */}
+      <Modal visible={showOfflineModal} transparent animationType="slide" onRequestClose={() => setShowOfflineModal(false)}>
+        <View style={tg.modalOverlay}>
+          <View style={tg.modalSheet}>
+            <View style={tg.modalHandle} />
+            <View style={[tg.modalIcon, { backgroundColor: C.warningLight }]}>
+              <Ionicons name="warning-outline" size={28} color={C.warning} />
+            </View>
+            <Text style={tg.modalTitle}>Course en cours</Text>
+            <Text style={tg.modalSub}>
+              Vous avez une course active en ce moment.{'\n'}
+              Êtes-vous sûr de vouloir passer hors ligne ?
+            </Text>
+            <TouchableOpacity style={[tg.modalBtn, { backgroundColor: C.primary }]} onPress={() => { setShowOfflineModal(false); goOffline(); }}>
+              <Text style={tg.modalBtnTxt}>Passer hors ligne quand même</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={tg.modalBtnSecondary} onPress={() => setShowOfflineModal(false)}>
+              <Text style={tg.modalBtnSecTxt}>Rester en ligne</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-function DemandeCard({ demande: d, onPress }) {
+function DemandeCard({ demande: d, onPress, onAccepter, showAccepter = false }) {
   const isUrgent    = d.type_demande === 'maintenant';
   const typeInfo    = TYPES_MARCHANDISE.find(t => t.key === d.type_marchandise);
   const creneauInfo = CRENEAUX.find(c => c.key === d.creneau);
   const distKm      = getDistanceKm(d.ville_depart, d.ville_arrivee);
+
+  const scheduledMs = parseDemandeTime(d.date_souhaitee, d.creneau);
+  const remainingMs = scheduledMs ? scheduledMs - Date.now() : null;
+  const countdown   = msToCountdown(remainingMs);
+  const isProche    = remainingMs != null && remainingMs > 0 && remainingMs < 6 * 3600000;
+
+  const fmtAccepterLabel = () => {
+    if (!d.date_souhaitee || d.date_souhaitee === 'Maintenant') return d.date_souhaitee;
+    const crInfo = CRENEAUX.find(c => c.key === d.creneau);
+    return `${d.date_souhaitee}${crInfo ? ` · ${crInfo.label}` : ''}`;
+  };
 
   return (
     <TouchableOpacity style={[s.card, isUrgent && s.cardUrgent]} onPress={onPress} activeOpacity={0.88}>
@@ -930,6 +762,12 @@ function DemandeCard({ demande: d, onPress }) {
         <View style={s.urgentBanner}>
           <Ionicons name="flash" size={12} color={C.error} style={{ marginRight: 6 }} />
           <Text style={s.urgentBannerTxt}>URGENT — Transport immédiat</Text>
+        </View>
+      )}
+      {!isUrgent && countdown && (
+        <View style={[s.urgentBanner, { backgroundColor: isProche ? '#FFF7ED' : '#F0FDF4', borderBottomColor: isProche ? '#FED7AA' : '#BBF7D0' }]}>
+          <Ionicons name="alarm-outline" size={12} color={isProche ? C.accent : C.success} style={{ marginRight: 6 }} />
+          <Text style={[s.urgentBannerTxt, { color: isProche ? C.accent : C.success }]}>{countdown}</Text>
         </View>
       )}
 
@@ -970,6 +808,12 @@ function DemandeCard({ demande: d, onPress }) {
                 <Text style={s.metaChipTxt}>{creneauInfo.label}</Text>
               </View>
             )}
+            {isProche && countdown && (
+              <View style={[s.metaChip, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
+                <Ionicons name="alarm-outline" size={11} color={C.accent} style={{ marginRight: 3 }} />
+                <Text style={[s.metaChipTxt, { color: C.accent }]}>{countdown}</Text>
+              </View>
+            )}
           </>
         )}
         {distKm != null && (
@@ -998,10 +842,17 @@ function DemandeCard({ demande: d, onPress }) {
           <Ionicons name="person-outline" size={13} color={C.muted} style={{ marginRight: 5 }} />
           <Text style={s.clientTxt}>{d.expediteur_nom}</Text>
         </View>
-        <View style={s.voirDetail}>
-          <Text style={s.voirDetailTxt}>Voir</Text>
-          <Ionicons name="chevron-forward" size={14} color={C.primary} />
-        </View>
+        {showAccepter && onAccepter ? (
+          <TouchableOpacity style={s.accepterBtn} onPress={onAccepter} activeOpacity={0.85}>
+            <Ionicons name="checkmark-circle-outline" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+            <Text style={s.accepterBtnTxt}>Accepter · {fmtAccepterLabel()}</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={s.voirDetail}>
+            <Text style={s.voirDetailTxt}>Voir</Text>
+            <Ionicons name="chevron-forward" size={14} color={C.primary} />
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -1100,6 +951,8 @@ const s = StyleSheet.create({
   infoTitle:   { fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 14, letterSpacing: -0.2 },
   infoStep:    { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
   infoStepTxt: { fontSize: 13, color: C.muted, lineHeight: 20, flex: 1 },
+  aideLink:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16, paddingVertical: 8 },
+  aideLinkTxt: { fontSize: 13, color: C.muted, fontWeight: '500' },
 
   card:        { backgroundColor: C.bg, borderRadius: 12, padding: 14, elevation: 2, borderWidth: 1, borderColor: '#F3F4F6', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06 },
   cardUrgent:  { borderColor: '#FCA5A5', borderWidth: 1.5 },
@@ -1127,6 +980,23 @@ const s = StyleSheet.create({
   clientTxt:   { fontSize: 13, fontWeight: '600', color: C.muted },
   voirDetail:  { flexDirection: 'row', alignItems: 'center', gap: 2 },
   voirDetailTxt: { fontSize: 13, fontWeight: '700', color: C.primary },
+
+  accepterBtn:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A56DB', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
+  accepterBtnTxt: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+
+  prochSection:   { backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
+  prochHeader:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
+  prochTitle:     { fontSize: 14, fontWeight: '800', color: C.text, flex: 1 },
+  prochBadge:     { backgroundColor: C.accentLight, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: '#FED7AA' },
+  prochBadgeTxt:  { fontSize: 11, fontWeight: '800', color: C.accent },
+  prochCard:      { width: 200, backgroundColor: C.bgAlt, borderRadius: 12, padding: 12, borderWidth: 1.5, borderColor: C.border },
+  prochCdBadge:   { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 8, borderWidth: 1, borderColor: '#FED7AA' },
+  prochCdTxt:     { fontSize: 11, fontWeight: '800' },
+  prochRoute:     { fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 3 },
+  prochDate:      { fontSize: 11, color: C.muted, fontWeight: '500', marginBottom: 4 },
+  prochPrix:      { fontSize: 13, fontWeight: '700', color: C.success, marginBottom: 8 },
+  prochAccepterBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 20, paddingVertical: 8 },
+  prochAccepterTxt:  { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 });
 
 const px = StyleSheet.create({
@@ -1163,7 +1033,9 @@ const vr = StyleSheet.create({
   card:        { width: '47%', borderWidth: 1.5, borderColor: C.border, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 10, alignItems: 'center', gap: 5, backgroundColor: C.bg, position: 'relative' },
   cardSelected:{ borderColor: C.primary, borderWidth: 2 },
   cardLabel:   { fontSize: 11, fontWeight: '600', color: C.muted, textAlign: 'center' },
-  recBadge:    { position: 'absolute', top: 6, right: 6, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  recBadge:      { position: 'absolute', top: 6, right: 6, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  insuffisantBox:{ flexDirection: 'row', alignItems: 'center', marginTop: 10, backgroundColor: C.accentLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#FED7AA' },
+  insuffisantTxt:{ fontSize: 12, fontWeight: '700', color: C.accent, flex: 1 },
 });
 
 // Avertissement
@@ -1196,12 +1068,8 @@ const qs = StyleSheet.create({
 });
 
 const hd = StyleSheet.create({
-  topRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  salutation:  { fontSize: 14, color: 'rgba(255,255,255,0.6)', fontWeight: '400', marginBottom: 4 },
-  slogan:      { fontSize: 22, fontWeight: '800', color: '#FFFFFF', lineHeight: 30, letterSpacing: -0.4, marginBottom: 10 },
-  disponBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16,185,129,0.15)', borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)', alignSelf: 'flex-start' },
-  greenDot:    { width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981', marginRight: 6 },
-  disponTxt:   { fontSize: 11, fontWeight: '700', color: '#34D399' },
+  topRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  salutation: { fontSize: 14, color: '#6B7280', fontWeight: '400' },
 });
 
 const rd = StyleSheet.create({
@@ -1213,4 +1081,37 @@ const rd = StyleSheet.create({
   typeTxt:    { fontSize: 11, color: C.muted, fontWeight: '600' },
   refaireBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 9, marginTop: 10 },
   refaireTxt: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+});
+
+// ── Toggle En ligne / Hors ligne ─────────────────────────────
+const tg = StyleSheet.create({
+  section:       { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  track:         { width: TRACK_W, height: 56, borderRadius: 28, justifyContent: 'center', overflow: 'hidden' },
+  thumb:         { position: 'absolute', height: 48, borderRadius: 24, backgroundColor: '#FFFFFF', top: 4, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 4 },
+  segments:      { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, flexDirection: 'row' },
+  segment:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  segLabel:      { fontSize: 15, fontWeight: '800', letterSpacing: -0.3 },
+  statusMsg:     { fontSize: 12, fontWeight: '500', textAlign: 'center', marginTop: 10, lineHeight: 18 },
+  statsRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  statsTxt:      { fontSize: 13, color: C.muted, fontWeight: '500' },
+  // Modal
+  modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet:    { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, alignItems: 'center' },
+  modalHandle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 24 },
+  modalIcon:     { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  modalTitle:    { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 8, letterSpacing: -0.3 },
+  modalSub:      { fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  modalBtn:      { width: '100%', paddingVertical: 15, borderRadius: 50, alignItems: 'center', marginBottom: 12 },
+  modalBtnTxt:   { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  modalBtnSecondary: { width: '100%', paddingVertical: 15, borderRadius: 50, alignItems: 'center', backgroundColor: C.bgAlt },
+  modalBtnSecTxt:{ fontSize: 15, fontWeight: '700', color: C.text },
+});
+
+// ── Boutons Maintenant / Planifier ───────────────────────────
+const nb = StyleSheet.create({
+  btnNoir:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0A0A0A', borderRadius: 12, padding: 20, marginBottom: 12 },
+  btnBlanc: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 20, borderWidth: 1.5, borderColor: '#0A0A0A', marginBottom: 12 },
+  emoji:    { fontSize: 26, marginRight: 14, width: 34 },
+  title:    { fontSize: 17, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, marginBottom: 3 },
+  sub:      { fontSize: 13, color: 'rgba(255,255,255,0.55)', fontWeight: '400', lineHeight: 18 },
 });

@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, Platform, StatusBar, ActivityIndicator,
-  Alert, Dimensions, Modal, Image,
+  Alert, Modal, Image, Animated, Easing, Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,9 +12,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { demandesDB, offresDB, notifDB, usersDB, annulationsDB, gainsDB, messagesDB } from '../../src/db/database';
 import { fmtPrix, partTransporteur } from '../../src/utils/pricing';
 import { useApp, localNotif } from '../../src/context/AppContext';
+import { NT } from '../../src/lib/notifications';
 import { getDistanceKm, fmtKm } from '../../src/utils/wilayas';
-
-const { width: W } = Dimensions.get('window');
 
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
@@ -28,6 +27,7 @@ const C = {
 const STATUTS = {
   en_attente: { label: 'En attente',  color: C.warning, bg: C.warningLight, icon: 'time-outline' },
   acceptee:   { label: 'Acceptée',    color: '#1A56DB', bg: '#EBF5FF',      icon: 'checkmark-circle-outline' },
+  en_route:   { label: 'En route',    color: C.accent,  bg: C.accentLight,  icon: 'car-sport-outline' },
   en_cours:   { label: 'En cours',    color: C.accent,  bg: C.accentLight,  icon: 'car-sport-outline' },
   livree:     { label: 'Livrée',      color: C.success, bg: C.successLight, icon: 'cube-outline' },
   annulee:    { label: 'Annulée',     color: C.error,   bg: C.errorLight,   icon: 'close-circle-outline' },
@@ -39,10 +39,10 @@ const TYPES_ICON = {
 };
 
 const RAISONS_ANNULATION = [
-  { key: 'mecanique', label: 'Problème mécanique',  icon: 'construct-outline' },
+  { key: 'mecanique', label: 'Problème mécanique',   icon: 'construct-outline' },
   { key: 'personnel', label: 'Empêchement personnel', icon: 'person-outline' },
-  { key: 'erreur',    label: 'Erreur de saisie',     icon: 'pencil-outline' },
-  { key: 'autre',     label: 'Autre raison',          icon: 'chatbubble-outline' },
+  { key: 'erreur',    label: 'Erreur de saisie',      icon: 'pencil-outline' },
+  { key: 'autre',     label: 'Autre raison',           icon: 'chatbubble-outline' },
 ];
 
 // ── Carte GPS ────────────────────────────────────────────────
@@ -67,13 +67,13 @@ function LocationMap({ user, status }) {
       setLastUpdate(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
       mapRef.current?.animateToRegion({ latitude, longitude, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 800);
     } catch {
-      Alert.alert('Localisation', 'Impossible d\'obtenir la position GPS.');
+      Alert.alert('Localisation', "Impossible d'obtenir la position GPS.");
     } finally { setLocLoading(false); }
   }, []);
 
   useEffect(() => { requestAndLocate(); }, []);
   useEffect(() => {
-    if (status !== 'en_cours') return;
+    if (status !== 'en_route') return;
     const interval = setInterval(requestAndLocate, 30_000);
     return () => clearInterval(interval);
   }, [status, requestAndLocate]);
@@ -176,6 +176,9 @@ export default function DetailCourseScreen() {
   const [suspension, setSuspension]           = useState(null);
   const [msgUnread, setMsgUnread]             = useState(0);
 
+  const [showStartModal, setShowStartModal] = useState(false);
+  const pulse = useRef(new Animated.Value(1)).current;
+
   const requestMediaPermission = async (type) => {
     if (type === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -187,7 +190,7 @@ export default function DetailCourseScreen() {
 
   const takePhoto = async () => {
     if (!(await requestMediaPermission('camera'))) {
-      Alert.alert('Permission refusée', 'Active l\'accès à la caméra dans les paramètres.'); return;
+      Alert.alert('Permission refusée', "Active l'accès à la caméra dans les paramètres."); return;
     }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.75, allowsEditing: true, aspect: [4, 3] });
     if (!result.canceled && result.assets?.[0]?.uri) setPhotoUri(result.assets[0].uri);
@@ -195,7 +198,7 @@ export default function DetailCourseScreen() {
 
   const pickFromGallery = async () => {
     if (!(await requestMediaPermission('gallery'))) {
-      Alert.alert('Permission refusée', 'Active l\'accès à la galerie dans les paramètres.'); return;
+      Alert.alert('Permission refusée', "Active l'accès à la galerie dans les paramètres."); return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.75, allowsEditing: true, aspect: [4, 3] });
     if (!result.canceled && result.assets?.[0]?.uri) setPhotoUri(result.assets[0].uri);
@@ -212,7 +215,9 @@ export default function DetailCourseScreen() {
         gainsDB.create({ transporteur_id: user.id, demande_id: parseInt(id), montant: part.montant, commission: part.commission });
         demandesDB.setPrixFinal(parseInt(id), prixRef);
       }
-      if (demande.expediteur_id) notifDB.create(demande.expediteur_id, `Livraison effectuée ! Ta marchandise est arrivée à ${demande.ville_arrivee}.`);
+      if (demande.expediteur_id) {
+        notifDB.create(demande.expediteur_id, `📦 Votre livraison est arrivée ! Marchandise déposée à ${demande.ville_arrivee}.`, NT.LIVRAISON_EFFECTUEE, { route: `/demande/${id}` });
+      }
       setShowPhotoModal(false);
       router.replace(`/notation?nom=${encodeURIComponent(demande.expediteur_nom || '')}&type=expediteur&demandeId=${id}`);
     } catch (e) { Alert.alert('Erreur', e.message); }
@@ -234,6 +239,45 @@ export default function DetailCourseScreen() {
 
   const isMyOrder = demande?.transporteur_id === user?.id;
   const isT       = user?.type === 'transporteur';
+  const canStart  = demande?.statut === 'acceptee' && isMyOrder;
+  const isEnRoute = demande?.statut === 'en_route' && isMyOrder;
+
+  // Pulse du bouton « Démarrer » pour attirer l'attention
+  useEffect(() => {
+    if (!canStart) { pulse.setValue(1); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.06, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1,    duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [canStart, pulse]);
+
+  const openNavigation = async (app) => {
+    const dest = encodeURIComponent(demande?.ville_arrivee || '');
+    const url = app === 'waze'
+      ? `https://waze.com/ul?q=${dest}&navigate=yes`
+      : `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
+    try { await Linking.openURL(url); } catch {
+      Alert.alert('Navigation', `Impossible d'ouvrir ${app === 'waze' ? 'Waze' : 'Google Maps'}.`);
+    }
+  };
+
+  const startCourse = async (navApp) => {
+    setActing(true);
+    try {
+      if (navApp) openNavigation(navApp);
+      demandesDB.updateStatut(parseInt(id), 'en_route');
+      if (demande.expediteur_id) {
+        notifDB.create(demande.expediteur_id, `🚛 Votre transporteur a démarré la course ! ${user.nom} est en route vers ${demande.ville_arrivee}.`, NT.TRANSPORTEUR_ENROUTE, { route: `/demande/${id}` });
+      }
+      setShowStartModal(false);
+      fetch();
+    } catch (e) { Alert.alert('Erreur', e.message); }
+    finally { setActing(false); }
+  };
 
   const handleAction = (nextStatut, confirmMsg) => {
     Alert.alert('Confirmer ?', confirmMsg, [
@@ -245,13 +289,10 @@ export default function DetailCourseScreen() {
           else demandesDB.updateStatut(parseInt(id), nextStatut);
           const msgs = {
             acceptee: `${user.nom} a accepté ta demande ${demande.ville_depart} → ${demande.ville_arrivee} !`,
-            en_cours: `Ta livraison est en route ! ${user.nom} a démarré.`,
-            livree:   `Livraison effectuée ! Ta marchandise est arrivée à ${demande.ville_arrivee}.`,
           };
-          if (demande.expediteur_id && msgs[nextStatut]) notifDB.create(demande.expediteur_id, msgs[nextStatut]);
-          if (nextStatut === 'livree') {
-            router.replace(`/notation?nom=${encodeURIComponent(demande.expediteur_nom || '')}&type=expediteur&demandeId=${id}`);
-          } else { fetch(); }
+          const notifTypes = { acceptee: NT.COURSE_ACCEPTEE };
+          if (demande.expediteur_id && msgs[nextStatut]) notifDB.create(demande.expediteur_id, msgs[nextStatut], notifTypes[nextStatut], { route: `/demande/${id}` });
+          fetch();
         } catch (e) { Alert.alert('Erreur', e.message); }
         finally { setActing(false); }
       }},
@@ -266,7 +307,7 @@ export default function DetailCourseScreen() {
       usersDB.incrementAnnulations(user.id);
       annulationsDB.create({ demande_id: parseInt(id), user_id: user.id, role: 'transporteur', motif: selectedReason, gratuite: 0 });
       const suspDate = usersDB.checkAndSuspend(user.id);
-      if (demande.expediteur_id) notifDB.create(demande.expediteur_id, 'Votre transporteur a annulé la course. Votre demande est à nouveau disponible.');
+      if (demande.expediteur_id) notifDB.create(demande.expediteur_id, 'Votre transporteur a annulé la course. Votre demande est à nouveau disponible.', NT.COURSE_ANNULEE, { route: `/demande/${id}` });
       setShowCancelModal(false);
       if (suspDate) {
         const fmt = new Date(suspDate).toLocaleDateString('fr-DZ', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -322,7 +363,7 @@ export default function DetailCourseScreen() {
             <View style={s.cardTitleRow}>
               <Ionicons name="location-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
               <Text style={s.cardTitle}>Ma position</Text>
-              {demande.statut === 'en_cours' && (
+              {demande.statut === 'en_route' && (
                 <View style={s.liveChip}>
                   <View style={s.liveDot} />
                   <Text style={s.liveTxt}>En direct</Text>
@@ -432,11 +473,11 @@ export default function DetailCourseScreen() {
         })()}
 
         {/* Bouton contacter expéditeur */}
-        {isMyOrder && ['acceptee', 'en_cours', 'livree'].includes(demande.statut) && (
+        {isMyOrder && ['acceptee', 'en_route'].includes(demande.statut) && (
           <TouchableOpacity style={s.contactBtn} onPress={() => router.push(`/chat/${id}`)}>
             <Ionicons name="chatbubble-ellipses" size={18} color={C.success} style={{ marginRight: 8 }} />
             <Text style={s.contactBtnTxt}>
-              Contacter l'expéditeur{msgUnread > 0 ? ` · ${msgUnread} non lu${msgUnread > 1 ? 's' : ''}` : ''}
+              {"Contacter l'expéditeur"}{msgUnread > 0 ? ` · ${msgUnread} non lu${msgUnread > 1 ? 's' : ''}` : ''}
             </Text>
             {msgUnread > 0 && (
               <View style={s.msgBadge}><Text style={s.msgBadgeTxt}>{msgUnread > 9 ? '9+' : msgUnread}</Text></View>
@@ -466,11 +507,13 @@ export default function DetailCourseScreen() {
               )}
             </View>
           </View>
-          <TouchableOpacity style={s.callBtn}
-            onPress={() => Alert.alert('Appeler l\'expéditeur', `Numéro : ${demande.expediteur_tel}`)}>
-            <Ionicons name="call-outline" size={16} color={C.success} style={{ marginRight: 8 }} />
-            <Text style={s.callBtnTxt}>{demande.expediteur_tel}</Text>
-          </TouchableOpacity>
+          {['acceptee', 'en_route'].includes(demande.statut) && (
+            <TouchableOpacity style={s.callBtn}
+              onPress={() => Alert.alert("Appeler l'expéditeur", `Numéro : ${demande.expediteur_tel}`)}>
+              <Ionicons name="call-outline" size={16} color={C.success} style={{ marginRight: 8 }} />
+              <Text style={s.callBtnTxt}>{demande.expediteur_tel}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Bannière suspension */}
@@ -479,16 +522,18 @@ export default function DetailCourseScreen() {
             <Ionicons name="ban-outline" size={28} color={C.error} style={{ marginBottom: 10 }} />
             <Text style={s.suspendedTitle}>Compte suspendu</Text>
             <Text style={s.suspendedTxt}>
-              Suspendu jusqu'au{' '}
+              {'Suspendu jusqu’au '}
               <Text style={{ fontWeight: '900' }}>
                 {new Date(suspension).toLocaleDateString('fr-DZ', { day: '2-digit', month: 'long', year: 'numeric' })}
               </Text>
-              {' '}suite à trop d'annulations.
+              {' suite à trop d’annulations.'}
             </Text>
           </View>
         )}
 
-        {/* Boutons d'action */}
+        {/* ── Boutons d'action ── */}
+
+        {/* Accepter (transporteur non assigné) */}
         {demande.statut === 'en_attente' && !isMyOrder && isT && !suspension && (
           <TouchableOpacity style={[s.actionBtn, acting && { opacity: 0.65 }]} onPress={() => handleAction('acceptee', `Accepter la course ${demande.ville_depart} → ${demande.ville_arrivee} ?`)} disabled={acting}>
             {acting ? <ActivityIndicator color="#FFFFFF" /> : <>
@@ -498,29 +543,42 @@ export default function DetailCourseScreen() {
           </TouchableOpacity>
         )}
 
-        {demande.statut === 'acceptee' && isMyOrder && (
-          <TouchableOpacity style={[s.actionBtn, { backgroundColor: C.accent }, acting && { opacity: 0.65 }]} onPress={() => handleAction('en_cours', 'Démarrer la course ? Le client sera notifié.')} disabled={acting}>
-            {acting ? <ActivityIndicator color="#FFFFFF" /> : <>
-              <Ionicons name="car-sport-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={s.actionBtnTxt}>Démarrer — Je suis en route !</Text>
-            </>}
+        {/* 🚀 Démarrer (pulsant) */}
+        {canStart && (
+          <Animated.View style={{ transform: [{ scale: pulse }] }}>
+            <TouchableOpacity
+              style={[s.actionBtn, s.startBtn, acting && { opacity: 0.65 }]}
+              onPress={() => setShowStartModal(true)}
+              disabled={acting}
+              activeOpacity={0.85}
+            >
+              <Text style={s.startEmoji}>🚀</Text>
+              <Text style={s.actionBtnTxt}>Démarrer la course</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        {/* 🏁 Terminer la course */}
+        {isEnRoute && (
+          <TouchableOpacity
+            style={[s.actionBtn, acting && { opacity: 0.65 }]}
+            onPress={() => { setPhotoUri(null); setShowPhotoModal(true); }}
+            disabled={acting}
+          >
+            <Text style={s.startEmoji}>🏁</Text>
+            <Text style={s.actionBtnTxt}>Terminer la course</Text>
           </TouchableOpacity>
         )}
 
-        {demande.statut === 'en_cours' && isMyOrder && (
-          <TouchableOpacity style={[s.actionBtn, { backgroundColor: C.success }, acting && { opacity: 0.65 }]} onPress={() => { setPhotoUri(null); setShowPhotoModal(true); }} disabled={acting}>
-            <Ionicons name="camera-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={s.actionBtnTxt}>Marquer comme livré</Text>
-          </TouchableOpacity>
-        )}
-
-        {['acceptee', 'en_cours'].includes(demande.statut) && isMyOrder && (
+        {/* Annuler */}
+        {['acceptee', 'en_route'].includes(demande.statut) && isMyOrder && (
           <TouchableOpacity style={[s.cancelCourseBtn, acting && { opacity: 0.65 }]} onPress={() => { setSelectedReason(null); setShowCancelModal(true); }} disabled={acting}>
             <Ionicons name="close-circle-outline" size={18} color={C.error} style={{ marginRight: 8 }} />
             <Text style={s.cancelCourseTxt}>Annuler cette course</Text>
           </TouchableOpacity>
         )}
 
+        {/* Course terminée */}
         {demande.statut === 'livree' && (
           <View style={s.doneCard}>
             <Ionicons name="checkmark-circle" size={48} color={C.success} style={{ marginBottom: 10 }} />
@@ -548,7 +606,7 @@ export default function DetailCourseScreen() {
                 ? <Text style={of.prix}>{myOffer.prix_propose.toLocaleString()} DA</Text>
                 : <Text style={[of.prix, { color: C.muted }]}>Prix à négocier</Text>
               }
-              {myOffer.message ? <Text style={of.msg}>"{myOffer.message}"</Text> : null}
+              {myOffer.message ? <Text style={of.msg}>{'"'}{myOffer.message}{'"'}</Text> : null}
               <View style={[of.badge,
                 myOffer.statut === 'acceptee' && { backgroundColor: C.successLight, borderColor: '#6EE7B7' },
                 myOffer.statut === 'refusee'  && { backgroundColor: C.errorLight, borderColor: '#FCA5A5' },
@@ -576,7 +634,7 @@ export default function DetailCourseScreen() {
                 <Ionicons name="cash-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
                 <Text style={of.title}>Faire une offre</Text>
               </View>
-              <Text style={of.sub}>Propose ton prix à l'expéditeur</Text>
+              <Text style={of.sub}>{"Propose ton prix à l'expéditeur"}</Text>
 
               <Text style={of.label}>Ton prix (DA)</Text>
               <TextInput style={of.input} placeholder="Ex : 2500" placeholderTextColor="#9CA3AF" value={offrePrix} onChangeText={setOffrePrix} keyboardType="numeric" />
@@ -590,8 +648,8 @@ export default function DetailCourseScreen() {
                   setSendingOffer(true);
                   try {
                     offresDB.create({ demande_id: demande.id, transporteur_id: user.id, prix_propose: offrePrix ? parseFloat(offrePrix) : null, message: offreMsg.trim() || null });
-                    notifDB.create(demande.expediteur_id, `${user.nom} a fait une offre pour ${demande.ville_depart} → ${demande.ville_arrivee} !`);
-                    localNotif(user.id, 'Offre envoyée ! Ta proposition a été transmise à l\'expéditeur.');
+                    notifDB.create(demande.expediteur_id, `${user.nom} a fait une offre pour ${demande.ville_depart} → ${demande.ville_arrivee} !`, NT.OFFRE_RECUE, { route: `/demande/${demande.id}` });
+                    localNotif(user.id, "Offre envoyée ! Ta proposition a été transmise à l'expéditeur.", NT.INFO);
                     setOffrePrix(''); setOffreMsg(''); fetch();
                   } catch (e) { Alert.alert('Erreur', e.message); }
                   finally { setSendingOffer(false); }
@@ -607,7 +665,74 @@ export default function DetailCourseScreen() {
         )}
       </ScrollView>
 
-      {/* Modal annulation course */}
+      {/* ── Modal démarrage course ── */}
+      <Modal visible={showStartModal} transparent animationType="slide" onRequestClose={() => setShowStartModal(false)}>
+        <View style={sm.overlay}>
+          <View style={sm.sheet}>
+            <View style={sm.handle} />
+            <View style={sm.rocketBadge}><Text style={{ fontSize: 28 }}>🚀</Text></View>
+            <Text style={sm.title}>Êtes-vous prêt à démarrer ?</Text>
+            <Text style={sm.sub}>
+              {"L'expéditeur sera notifié immédiatement. Destination :"}{'\n'}
+              <Text style={{ fontWeight: '800', color: C.text }}>{demande.ville_arrivee}</Text>
+            </Text>
+
+            <Text style={sm.navLabel}>Naviguer vers la destination</Text>
+
+            {/* Google Maps */}
+            <TouchableOpacity
+              style={[sm.navBtn, sm.navBtnGoogle, acting && { opacity: 0.6 }]}
+              onPress={() => startCourse('gmaps')}
+              disabled={acting}
+              activeOpacity={0.8}
+            >
+              <View style={sm.navBtnIcon}>
+                <Ionicons name="map-outline" size={20} color="#34A853" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={sm.navBtnTitle}>🗺️ Google Maps</Text>
+                <Text style={sm.navBtnSub}>Ouvrir la navigation GPS</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#34A853" />
+            </TouchableOpacity>
+
+            {/* Waze */}
+            <TouchableOpacity
+              style={[sm.navBtn, sm.navBtnWaze, acting && { opacity: 0.6 }]}
+              onPress={() => startCourse('waze')}
+              disabled={acting}
+              activeOpacity={0.8}
+            >
+              <View style={[sm.navBtnIcon, { backgroundColor: '#33CCFF' }]}>
+                <Ionicons name="navigate-outline" size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[sm.navBtnTitle, { color: '#1A8FBF' }]}>🔵 Waze</Text>
+                <Text style={sm.navBtnSub}>Trafic en temps réel</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#1A8FBF" />
+            </TouchableOpacity>
+
+            {/* Sans navigation */}
+            <TouchableOpacity
+              style={[sm.skipBtn, acting && { opacity: 0.6 }]}
+              onPress={() => startCourse(null)}
+              disabled={acting}
+            >
+              {acting
+                ? <ActivityIndicator color={C.primary} size="small" />
+                : <Text style={sm.skipTxt}>Démarrer sans navigation</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity style={sm.cancelBtn} onPress={() => setShowStartModal(false)} disabled={acting}>
+              <Text style={sm.cancelTxt}>Plus tard</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal annulation course ── */}
       <Modal visible={showCancelModal} transparent animationType="slide" onRequestClose={() => setShowCancelModal(false)}>
         <View style={cm.overlay}>
           <View style={cm.sheet}>
@@ -617,7 +742,7 @@ export default function DetailCourseScreen() {
               La demande sera remise en attente.{'\n'}
               <Text style={{ fontWeight: '800', color: C.error }}>Cette annulation sera enregistrée.</Text>
             </Text>
-            <Text style={cm.reasonLabel}>Raison de l'annulation</Text>
+            <Text style={cm.reasonLabel}>{"Raison de l'annulation"}</Text>
             {RAISONS_ANNULATION.map(r => (
               <TouchableOpacity key={r.key} style={[cm.reasonBtn, selectedReason === r.key && cm.reasonBtnSelected]} onPress={() => setSelectedReason(r.key)} activeOpacity={0.75}>
                 <Ionicons name={r.icon} size={16} color={selectedReason === r.key ? C.error : C.muted} style={{ marginRight: 10 }} />
@@ -626,7 +751,7 @@ export default function DetailCourseScreen() {
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={[cm.confirmBtn, !selectedReason && { backgroundColor: C.border }, acting && { opacity: 0.7 }]} onPress={handleAnnulerCourse} disabled={!selectedReason || acting}>
-              {acting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={cm.confirmTxt}>Confirmer l'annulation</Text>}
+              {acting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={cm.confirmTxt}>{"Confirmer l'annulation"}</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={cm.abandonBtn} onPress={() => setShowCancelModal(false)} disabled={acting}>
               <Text style={cm.abandonTxt}>Abandonner</Text>
@@ -635,15 +760,15 @@ export default function DetailCourseScreen() {
         </View>
       </Modal>
 
-      {/* Modal photo de livraison */}
+      {/* ── Modal photo de livraison ── */}
       <Modal visible={showPhotoModal} transparent animationType="slide" onRequestClose={() => setShowPhotoModal(false)}>
         <View style={pm.overlay}>
           <View style={pm.sheet}>
             <View style={pm.handle} />
-            <Text style={pm.title}>Photo de livraison</Text>
+            <Text style={pm.title}>📦 Confirmer la livraison</Text>
             <Text style={pm.sub}>
-              Prends ou sélectionne une photo de la marchandise déposée.{'\n'}
-              <Text style={{ fontWeight: '800', color: C.text }}>Obligatoire</Text> pour confirmer la livraison.
+              {"Prends une photo de la marchandise déposée."}{'\n'}
+              <Text style={{ fontWeight: '800', color: C.text }}>Obligatoire</Text> pour terminer la course.
             </Text>
             {photoUri ? (
               <View style={pm.previewBox}>
@@ -674,7 +799,7 @@ export default function DetailCourseScreen() {
             <TouchableOpacity style={[pm.confirmBtn, !photoUri && { backgroundColor: C.border }, confirming && { opacity: 0.7 }]} onPress={confirmLivraison} disabled={!photoUri || confirming}>
               {confirming ? <ActivityIndicator color="#FFFFFF" /> : <>
                 <Ionicons name={photoUri ? 'checkmark-circle-outline' : 'camera-outline'} size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={pm.confirmTxt}>{photoUri ? 'Confirmer la livraison' : 'Ajoute une photo d\'abord'}</Text>
+                <Text style={pm.confirmTxt}>{photoUri ? 'Livraison confirmée !' : "Ajoute d'abord une photo"}</Text>
               </>}
             </TouchableOpacity>
             <TouchableOpacity style={pm.cancelBtn} onPress={() => { setShowPhotoModal(false); setPhotoUri(null); }} disabled={confirming}>
@@ -738,8 +863,10 @@ const s = StyleSheet.create({
   callBtn:          { flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, borderRadius: 10, paddingVertical: 13, paddingHorizontal: 14, borderWidth: 1.5, borderColor: '#6EE7B7' },
   callBtnTxt:       { fontSize: 14, fontWeight: '700', color: C.success },
 
-  actionBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6 },
-  actionBtnTxt:{ color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  actionBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6 },
+  actionBtnTxt:    { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  startBtn:        { backgroundColor: C.success },
+  startEmoji:      { fontSize: 18, marginRight: 8 },
 
   doneCard:    { backgroundColor: C.successLight, borderRadius: 12, padding: 24, alignItems: 'center', borderWidth: 1.5, borderColor: '#6EE7B7' },
   doneTxt:     { fontSize: 20, fontWeight: '800', color: C.success, marginBottom: 4 },
@@ -794,23 +921,47 @@ const cm = StyleSheet.create({
   abandonTxt:        { fontSize: 14, color: C.muted, fontWeight: '600' },
 });
 
+// Start modal styles
+const sm = StyleSheet.create({
+  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet:        { backgroundColor: C.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28 },
+  handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 18 },
+  rocketBadge:  { width: 64, height: 64, borderRadius: 32, backgroundColor: C.successLight, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 14, borderWidth: 1.5, borderColor: '#6EE7B7' },
+  title:        { fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
+  sub:          { fontSize: 13, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 22 },
+  navLabel:     { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+
+  navBtn:       { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10, borderWidth: 1.5, gap: 12 },
+  navBtnGoogle: { backgroundColor: '#FAFFFE', borderColor: '#BBF7D0' },
+  navBtnWaze:   { backgroundColor: '#EAF8FF', borderColor: '#B3E7FA' },
+  navBtnIcon:   { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' },
+  navBtnTitle:  { fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 2 },
+  navBtnSub:    { fontSize: 12, color: C.muted, fontWeight: '500' },
+
+  skipBtn:      { alignItems: 'center', justifyContent: 'center', borderRadius: 50, paddingVertical: 14, marginBottom: 8, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgAlt },
+  skipTxt:      { fontSize: 14, fontWeight: '700', color: C.text },
+
+  cancelBtn:    { alignItems: 'center', paddingVertical: 10 },
+  cancelTxt:    { fontSize: 14, color: C.muted, fontWeight: '600' },
+});
+
 const pm = StyleSheet.create({
-  overlay:          { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  sheet:            { backgroundColor: C.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28 },
-  handle:           { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 20 },
-  title:            { fontSize: 19, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
-  sub:              { fontSize: 13, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
-  placeholder:      { height: 160, borderRadius: 12, borderWidth: 2, borderColor: C.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgAlt, marginBottom: 16, gap: 8 },
-  placeholderTxt:   { fontSize: 13, color: C.muted, fontWeight: '600' },
-  previewBox:       { position: 'relative', marginBottom: 16, borderRadius: 12, overflow: 'hidden' },
-  preview:          { width: '100%', height: 200, borderRadius: 12 },
-  retakeBtn:        { flexDirection: 'row', alignItems: 'center', position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  retakeTxt:        { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-  sourceRow:        { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  sourceBtn:        { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgAlt, gap: 6 },
-  sourceTxt:        { fontSize: 13, fontWeight: '700', color: C.primary },
-  confirmBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.success, borderRadius: 50, paddingVertical: 17, marginBottom: 12 },
-  confirmTxt:       { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  cancelBtn:        { alignItems: 'center', paddingVertical: 10 },
-  cancelTxt:        { fontSize: 14, color: C.muted, fontWeight: '600' },
+  overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet:          { backgroundColor: C.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28 },
+  handle:         { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 20 },
+  title:          { fontSize: 19, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
+  sub:            { fontSize: 13, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  placeholder:    { height: 160, borderRadius: 12, borderWidth: 2, borderColor: C.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgAlt, marginBottom: 16, gap: 8 },
+  placeholderTxt: { fontSize: 13, color: C.muted, fontWeight: '600' },
+  previewBox:     { position: 'relative', marginBottom: 16, borderRadius: 12, overflow: 'hidden' },
+  preview:        { width: '100%', height: 200, borderRadius: 12 },
+  retakeBtn:      { flexDirection: 'row', alignItems: 'center', position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
+  retakeTxt:      { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  sourceRow:      { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  sourceBtn:      { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgAlt, gap: 6 },
+  sourceTxt:      { fontSize: 13, fontWeight: '700', color: C.primary },
+  confirmBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.success, borderRadius: 50, paddingVertical: 17, marginBottom: 12 },
+  confirmTxt:     { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  cancelBtn:      { alignItems: 'center', paddingVertical: 10 },
+  cancelTxt:      { fontSize: 14, color: C.muted, fontWeight: '600' },
 });

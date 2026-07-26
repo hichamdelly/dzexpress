@@ -8,7 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useReservation, ProgressBar } from '../../src/context/ReservationContext';
 import { useApp } from '../../src/context/AppContext';
-import { demandesDB } from '../../src/db/database';
+import { demandesDB, notifDB, usersDB } from '../../src/db/database';
+import { NT } from '../../src/lib/notifications';
 import { calculerPrix, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
 import { getDistanceKm } from '../../src/utils/wilayas';
 
@@ -45,7 +46,7 @@ export default function Recapitulatif() {
   const { user } = useApp();
   const ctx     = useReservation();
 
-  const [mode,      setMode]      = useState(ctx.mode || 'instantane');
+  const mode = ctx.mode || 'instantane';
   const [date,      setDate]      = useState(ctx.date  || null);
   const [heure,     setHeure]     = useState(ctx.heure || null);
   const [showDate,  setShowDate]  = useState(false);
@@ -112,7 +113,7 @@ export default function Recapitulatif() {
       const fmt = d =>
         `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 
-      demandesDB.create({
+      const newDemandeId = demandesDB.create({
         expediteur_id:            user.id,
         ville_depart:             ctx.departure,
         ville_arrivee:            ctx.arrival,
@@ -128,6 +129,15 @@ export default function Recapitulatif() {
         sous_categorie:           ctx.sousCategorie || null,
         vehicule_recommande:      ctx.vehicule || null,
       });
+      // Notifier tous les transporteurs locaux
+      try {
+        const transporteurs = usersDB.getAllTransporteurs();
+        for (const t of transporteurs) {
+          if (t.id !== user.id) {
+            notifDB.create(t.id, `Nouvelle demande : ${ctx.departure} → ${ctx.arrival}`, NT.NOUVELLE_DEMANDE, { route: `/course/${newDemandeId}` });
+          }
+        }
+      } catch (_) {}
 
       ctx.reset();
       Alert.alert(
@@ -175,28 +185,9 @@ export default function Recapitulatif() {
           )}
         </View>
 
-        <Text style={s.sectionTitle}>Quand ?</Text>
-        <View style={s.modeRow}>
-          <TouchableOpacity
-            style={[s.modeBtn, mode === 'instantane' && s.modeBtnActive]}
-            onPress={() => setMode('instantane')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="flash" size={22} color={mode === 'instantane' ? '#FFFFFF' : C.muted} />
-            <Text style={[s.modeBtnTxt, mode === 'instantane' && { color: '#FFFFFF' }]}>Maintenant</Text>
-            <Text style={[s.modeBtnSub, mode === 'instantane' && { color: 'rgba(255,255,255,0.65)' }]}>Choix direct</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.modeBtn, mode === 'planifie' && s.modeBtnActive]}
-            onPress={() => setMode('planifie')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="calendar-outline" size={22} color={mode === 'planifie' ? '#FFFFFF' : C.muted} />
-            <Text style={[s.modeBtnTxt, mode === 'planifie' && { color: '#FFFFFF' }]}>Planifier</Text>
-            <Text style={[s.modeBtnSub, mode === 'planifie' && { color: 'rgba(255,255,255,0.65)' }]}>Choisir une date</Text>
-          </TouchableOpacity>
-        </View>
-
+        {mode === 'planifie' && (
+          <Text style={[s.sectionTitle, { marginBottom: 12 }]}>Date et heure</Text>
+        )}
         {mode === 'planifie' && (
           <>
             <View style={s.dtRow}>
@@ -274,10 +265,10 @@ export default function Recapitulatif() {
             <ActivityIndicator color="#FFFFFF" />
           ) : mode === 'instantane' ? (
             <>
-              <Ionicons name="map-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Ionicons name="flash" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
               <View>
-                <Text style={s.reserveBtnTxt}>Voir les transporteurs</Text>
-                <Text style={s.reserveBtnSub}>Choisis sur la carte</Text>
+                <Text style={s.reserveBtnTxt}>Réserver maintenant</Text>
+                <Text style={s.reserveBtnSub}>Choix du transporteur sur la carte</Text>
               </View>
             </>
           ) : (

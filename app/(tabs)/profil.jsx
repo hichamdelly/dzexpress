@@ -51,12 +51,18 @@ export default function ProfilScreen() {
   const [showW, setShowW]       = useState(false);
   const [vehicule, setVehicule] = useState(user?.vehicule || '');
   const [dispo, setDispo]       = useState(user?.disponible === 1);
+  const [heureEnLigne, setHeureEnLigne] = useState(null);
   const [saving, setSaving]     = useState(false);
   const [gains, setGains]       = useState(null);
 
   useEffect(() => {
     if (user?.type === 'transporteur') {
-      try { setGains(gainsDB.getStats(user.id)); } catch (_) {}
+      try {
+        setGains(gainsDB.getStats(user.id));
+        const u = usersDB.getById(user.id);
+        setDispo(u?.disponible === 1);
+        setHeureEnLigne(u?.disponible === 1 ? u?.heure_mise_en_ligne : null);
+      } catch (_) {}
     }
   }, [user?.id]);
 
@@ -87,11 +93,10 @@ export default function ProfilScreen() {
 
   const toggleDispo = () => {
     const nv = !dispo;
+    const now = nv ? new Date().toISOString() : null;
     setDispo(nv);
-    usersDB.update(user.id, {
-      nom: user.nom, telephone: user.telephone, wilaya: user.wilaya,
-      vehicule: user.vehicule, disponible: nv ? 1 : 0,
-    });
+    setHeureEnLigne(nv ? now : null);
+    try { usersDB.setDisponible(user.id, nv ? 1 : 0, now); } catch (_) {}
     refreshUser();
   };
 
@@ -117,6 +122,22 @@ export default function ProfilScreen() {
           <Ionicons name={isT ? 'car-sport-outline' : 'cube-outline'} size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
           <Text style={s.typeBadgeTxt}>{isT ? 'Transporteur' : 'Expéditeur'}</Text>
         </View>
+        {isT && (
+          <View style={[p.onlineBadge, { backgroundColor: dispo ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.1)' }]}>
+            <View style={[p.onlineDot, { backgroundColor: dispo ? '#10B981' : '#9CA3AF' }]} />
+            <Text style={[p.onlineTxt, { color: dispo ? '#10B981' : 'rgba(255,255,255,0.6)' }]}>
+              {dispo ? 'En ligne' : 'Hors ligne'}
+            </Text>
+            {dispo && heureEnLigne && (() => {
+              const mins = Math.floor((Date.now() - new Date(heureEnLigne).getTime()) / 60000);
+              if (mins < 1) return null;
+              const label = mins < 60
+                ? `${mins} min`
+                : (() => { const h = Math.floor(mins / 60), m = mins % 60; return m > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${h}h`; })();
+              return <Text style={p.onlineSince}>{`  ·  depuis ${label}`}</Text>;
+            })()}
+          </View>
+        )}
       </View>
 
       {/* Toggle disponibilité */}
@@ -266,6 +287,20 @@ export default function ProfilScreen() {
         )}
       </View>
 
+      {/* Aide & Support */}
+      <TouchableOpacity style={s.aideBtn} onPress={() => router.push('/aide')} activeOpacity={0.85}>
+        <View style={s.aideBtnLeft}>
+          <View style={[s.aideBtnIcon, { backgroundColor: '#EFF6FF' }]}>
+            <Ionicons name="help-circle-outline" size={20} color="#1D4ED8" />
+          </View>
+          <View>
+            <Text style={s.aideBtnTitle}>Aide & Support</Text>
+            <Text style={s.aideBtnSub}>FAQ, nous contacter, signaler un problème</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={C.muted} />
+      </TouchableOpacity>
+
       {/* À propos */}
       <View style={[s.section, { marginTop: 8 }]}>
         <View style={s.sectionHeader}>
@@ -408,10 +443,24 @@ const s = StyleSheet.create({
   aboutDesc:    { fontSize: 13, color: C.muted, lineHeight: 20, marginBottom: 8 },
   aboutVersion: { fontSize: 11, color: '#D1D5DB', fontWeight: '500' },
 
+  aideBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.bg, marginHorizontal: 16, marginTop: 8, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, elevation: 2 },
+  aideBtnLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  aideBtnIcon:  { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  aideBtnTitle: { fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 2 },
+  aideBtnSub:   { fontSize: 12, color: C.muted },
+
   logoutBtn: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
     margin: 16, backgroundColor: C.errorLight, borderRadius: 12,
     paddingVertical: 16, borderWidth: 1.5, borderColor: '#FCA5A5',
   },
   logoutTxt: { fontSize: 15, fontWeight: '700', color: C.error },
+});
+
+// Online badge styles
+const p = StyleSheet.create({
+  onlineBadge: { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingHorizontal: 12, paddingVertical: 5, marginTop: 10 },
+  onlineDot:   { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
+  onlineTxt:   { fontSize: 13, fontWeight: '700', letterSpacing: -0.1 },
+  onlineSince: { fontSize: 12, fontWeight: '500', color: 'rgba(16,185,129,0.7)' },
 });
