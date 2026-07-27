@@ -320,6 +320,20 @@ export default function ProfilScreen() {
         )}
       </View>
 
+      {/* Signaler un problème */}
+      <TouchableOpacity style={s.aideBtn} onPress={() => router.push('/signalement')} activeOpacity={0.85}>
+        <View style={s.aideBtnLeft}>
+          <View style={[s.aideBtnIcon, { backgroundColor: C.errorLight }]}>
+            <Ionicons name="flag-outline" size={20} color={C.error} />
+          </View>
+          <View>
+            <Text style={s.aideBtnTitle}>Signaler un problème</Text>
+            <Text style={s.aideBtnSub}>Paiement, comportement, bug, fraude…</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={C.muted} />
+      </TouchableOpacity>
+
       {/* Aide & Support */}
       <TouchableOpacity style={s.aideBtn} onPress={() => router.push('/aide')} activeOpacity={0.85}>
         <View style={s.aideBtnLeft}>
@@ -328,7 +342,7 @@ export default function ProfilScreen() {
           </View>
           <View>
             <Text style={s.aideBtnTitle}>Aide & Support</Text>
-            <Text style={s.aideBtnSub}>FAQ, nous contacter, signaler un problème</Text>
+            <Text style={s.aideBtnSub}>FAQ, nous contacter, chat support</Text>
           </View>
         </View>
         <Ionicons name="chevron-forward" size={18} color={C.muted} />
