@@ -6,10 +6,10 @@ const INITIAL_STATE = {
   // Localisation
   departure:     '',
   arrival:       '',
-  // Marchandise
-  category:      '',      // key TYPES_MARCHANDISE
-  sousCategorie: '',      // key SOUS_CATEGORIES
-  vehicule:      '',      // key TARIFS_BASE (veh recommandé ou choisi)
+  // Marchandise — sélection MULTIPLE (voir app/reservation/marchandise.jsx)
+  categories:       [],   // keys TYPES_MARCHANDISE, plusieurs possibles
+  optionsCategories:{},   // { [categoryKey]: sousCategorieKey } — une sous-catégorie par catégorie
+  vehicule:      '',      // key TARIFS_BASE (veh recommandé — le plus grand parmi les catégories — ou choisi)
   // Quantité / description
   quantite:      '',      // poids texte libre
   description:   '',
@@ -38,6 +38,11 @@ export function ReservationProvider({ children }) {
     setData(prev => ({ ...prev, [key]: value }));
   }, []);
 
+  // Met à jour plusieurs champs en un seul appel : update({ categories: [...], vehicule: '...' })
+  const update = useCallback((partial) => {
+    setData(prev => ({ ...prev, ...partial }));
+  }, []);
+
   const setOption = useCallback((key, value) => {
     setData(prev => ({
       ...prev,
@@ -60,7 +65,7 @@ export function ReservationProvider({ children }) {
     <ReservationContext.Provider value={{
       ...data,
       step, totalSteps,
-      setField, setOption, reset, nextStep, prevStep, setStep,
+      setField, setOption, update, reset, nextStep, prevStep, setStep,
     }}>
       {children}
     </ReservationContext.Provider>

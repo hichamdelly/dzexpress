@@ -1,7 +1,7 @@
 // Notification sonore + vibration pour les nouveaux messages
 // Pour activer le son : placer un fichier notification.wav dans assets/sounds/
 
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Vibration, Platform } from 'react-native';
 
 let _sound = null;
@@ -16,22 +16,21 @@ export async function playNotifSound() {
 
   // Son (optionnel — nécessite assets/sounds/notification.wav)
   try {
-    await Audio.setAudioModeAsync({ playsInSilentModeIOS: false });
+    await setAudioModeAsync({ playsInSilentMode: false });
     if (_sound) {
-      await _sound.unloadAsync();
+      _sound.remove();
       _sound = null;
     }
-    const { sound } = await Audio.Sound.createAsync(
-      require('../../assets/sounds/notification.wav'),
-      { shouldPlay: true, volume: 0.7 }
-    );
-    _sound = sound;
-    sound.setOnPlaybackStatusUpdate(s => {
+    const player = createAudioPlayer(require('../../assets/sounds/notification.wav'));
+    player.volume = 0.7;
+    _sound = player;
+    player.addListener('playbackStatusUpdate', s => {
       if (s.didJustFinish) {
-        sound.unloadAsync();
-        _sound = null;
+        player.remove();
+        if (_sound === player) _sound = null;
       }
     });
+    player.play();
   } catch (_) {
     // Fichier son absent — la vibration couvre le feedback
   }

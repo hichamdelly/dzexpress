@@ -1,31 +1,22 @@
 import { useEffect, useRef } from 'react';
 import { Animated, View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { notifMeta } from '../lib/notifications';
 
 const TOP_OFFSET = Platform.OS === 'ios' ? 52 : (StatusBar.currentHeight || 24) + 6;
 
-function getIcon(message) {
-  if (!message) return 'notifications';
-  if (message.includes('annul')) return 'close-circle';
-  if (message.includes('accept') || message.includes('Accepté')) return 'checkmark-circle';
-  if (message.includes('livr')) return 'cube';
-  if (message.includes('message') || message.includes('Message')) return 'chatbubble';
-  if (message.includes('urgent') || message.includes('Urgent')) return 'flash';
-  return 'notifications';
-}
-
-export function NotifBanner({ notification, onDismiss }) {
-  const slideY  = useRef(new Animated.Value(-100)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+export function NotifBanner({ notification, onDismiss, onPress }) {
+  const slideY   = useRef(new Animated.Value(-120)).current;
+  const opacity  = useRef(new Animated.Value(0)).current;
   const timerRef = useRef(null);
 
   useEffect(() => {
     if (!notification) return;
     if (timerRef.current) clearTimeout(timerRef.current);
-    slideY.setValue(-100);
+    slideY.setValue(-120);
     opacity.setValue(0);
     Animated.parallel([
-      Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 70, friction: 11 }),
+      Animated.spring(slideY,  { toValue: 0, useNativeDriver: true, tension: 70, friction: 11 }),
       Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }),
     ]).start();
     timerRef.current = setTimeout(animateOut, 4000);
@@ -36,25 +27,37 @@ export function NotifBanner({ notification, onDismiss }) {
   const animateOut = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     Animated.parallel([
-      Animated.timing(slideY,  { toValue: -100, duration: 260, useNativeDriver: true }),
+      Animated.timing(slideY,  { toValue: -120, duration: 260, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 0,    duration: 200, useNativeDriver: true }),
     ]).start(() => onDismiss?.());
   };
 
+  const handlePress = () => {
+    animateOut();
+    onPress?.(notification);
+  };
+
   if (!notification) return null;
 
-  const iconName = getIcon(notification.message);
-  // Strip leading emoji chars for clean display
-  const cleanMsg = notification.message?.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}✅❌🚀📤💬🔔⚠️]\s*/u, '') || '';
+  const meta = notifMeta(notification.type);
 
   return (
     <Animated.View style={[s.container, { top: TOP_OFFSET, transform: [{ translateY: slideY }], opacity }]}>
-      <View style={s.iconWrap}>
-        <Ionicons name={iconName} size={18} color="#F97316" />
-      </View>
-      <Text style={s.message} numberOfLines={2}>{cleanMsg || notification.message}</Text>
-      <TouchableOpacity onPress={animateOut} hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }} style={s.closeBtn}>
-        <Ionicons name="close" size={16} color="#9CA3AF" />
+      <TouchableOpacity style={s.inner} onPress={handlePress} activeOpacity={0.9}>
+        <View style={[s.iconWrap, { backgroundColor: meta.color + '28' }]}>
+          <Ionicons name={meta.icon} size={18} color={meta.color} />
+        </View>
+        <View style={s.textBlock}>
+          <Text style={s.title} numberOfLines={1}>{meta.label}</Text>
+          <Text style={s.message} numberOfLines={2}>{notification.message}</Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={animateOut}
+        hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+        style={s.closeBtn}
+      >
+        <Ionicons name="close" size={15} color="#9CA3AF" />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -62,23 +65,25 @@ export function NotifBanner({ notification, onDismiss }) {
 
 const s = StyleSheet.create({
   container: {
-    position: 'absolute', left: 16, right: 16, zIndex: 9999, elevation: 20,
+    position: 'absolute', left: 14, right: 14, zIndex: 9999, elevation: 20,
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#0A0A0A',
-    borderRadius: 12,
-    paddingVertical: 14, paddingHorizontal: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18, shadowRadius: 12,
+    borderRadius: 14,
+    paddingVertical: 10, paddingLeft: 10, paddingRight: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22, shadowRadius: 16,
   },
-  iconWrap: {
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: 'rgba(249,115,22,0.15)',
-    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  inner:     { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  iconWrap:  {
+    width: 38, height: 38, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12, flexShrink: 0,
   },
-  message: { flex: 1, fontSize: 13, fontWeight: '600', color: '#FFFFFF', lineHeight: 19 },
-  closeBtn: {
-    width: 28, height: 28, borderRadius: 6,
+  textBlock: { flex: 1 },
+  title:     { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.55)', marginBottom: 2, letterSpacing: 0.3 },
+  message:   { fontSize: 13, fontWeight: '600', color: '#FFFFFF', lineHeight: 18 },
+  closeBtn:  {
+    width: 28, height: 28, borderRadius: 7,
     backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+    alignItems: 'center', justifyContent: 'center', marginLeft: 8, flexShrink: 0,
   },
 });

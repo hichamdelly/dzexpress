@@ -4,7 +4,10 @@ import {
   StyleSheet, Platform, StatusBar, KeyboardAvoidingView,
   Animated, ActivityIndicator, Alert,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import {
+  AudioModule, RecordingPresets, createAudioPlayer, setAudioModeAsync,
+  requestRecordingPermissionsAsync,
+} from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '../../src/context/AppContext';
@@ -64,7 +67,7 @@ export default function ChatScreen() {
     : (demande?.expediteur_nom   || 'Expéditeur');
 
   useEffect(() => () => {
-    soundRef.current?.unloadAsync();
+    try { soundRef.current?.remove(); } catch (_) {}
     clearInterval(recTimerRef.current);
   }, []);
 
@@ -139,13 +142,15 @@ export default function ChatScreen() {
   const startRecording = async () => {
     if (!canVoice) return;
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) {
         Alert.alert('Microphone requis', "Active l'accès au micro dans les paramètres.");
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true, shouldDuckAndroid: true, playThroughEarpieceAndroid: false });
-      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, interruptionMode: 'duckOthers', shouldRouteThroughEarpiece: false });
+      const rec = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+      await rec.prepareToRecordAsync();
+      rec.record();
       cancelRecordingRef.current = false;
       recordingRef.current = rec;
       recDurationRef.current = 0;
@@ -178,9 +183,9 @@ export default function ChatScreen() {
     const shouldDiscard = cancelled || cancelRecordingRef.current;
     setIsRecording(false);
     try {
-      await rec.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: false });
-      const uri = rec.getURI();
+      await rec.stop();
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: false });
+      const uri = rec.uri;
       setRecording(null);
       recDurationRef.current = 0;
       setRecordDuration(0);
@@ -216,22 +221,22 @@ export default function ChatScreen() {
   const playVoice = async (msgId, uri) => {
     try {
       if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        soundRef.current.remove();
         soundRef.current = null;
       }
       if (playingId === msgId) { setPlayingId(null); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: false });
-      const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
-      soundRef.current = sound;
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: false });
+      const player = createAudioPlayer({ uri });
+      soundRef.current = player;
       setPlayingId(msgId);
-      sound.setOnPlaybackStatusUpdate(st => {
+      player.addListener('playbackStatusUpdate', st => {
         if (st.didJustFinish) {
-          sound.unloadAsync();
-          soundRef.current = null;
+          player.remove();
+          if (soundRef.current === player) soundRef.current = null;
           setPlayingId(null);
         }
       });
+      player.play();
     } catch {
       Alert.alert('Lecture impossible', 'Ce fichier audio ne peut pas être lu.');
       setPlayingId(null);

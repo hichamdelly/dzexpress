@@ -90,7 +90,7 @@ function MesDemandes({ user }) {
     reset();
     setField('departure', d.ville_depart);
     setField('arrival',   d.ville_arrivee);
-    setField('category',  d.type_marchandise);
+    setField('categories', (d.type_marchandise || '').split(',').filter(Boolean));
     setField('mode',      d.type_demande || 'planifie');
     if (d.poids)       setField('quantite',    d.poids);
     if (d.description) setField('description', d.description);
@@ -183,6 +183,18 @@ function MesDemandes({ user }) {
                   <Ionicons name="checkmark-circle" size={14} color={C.success} style={{ marginRight: 6 }} />
                   <Text style={s.acceptedBarTxt}>Accepté par {d.transporteur_nom}</Text>
                 </View>
+              )}
+
+              {d.statut === 'en_route' && (
+                <TouchableOpacity
+                  style={s.suiviLiveBar}
+                  onPress={(e) => { e.stopPropagation?.(); router.push(`/suivi-live/${d.id}`); }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="location" size={14} color={C.accent} style={{ marginRight: 6 }} />
+                  <Text style={s.suiviLiveBarTxt}>📍 Suivre ma livraison</Text>
+                  <Ionicons name="chevron-forward" size={13} color={C.accent} />
+                </TouchableOpacity>
               )}
 
               <View style={s.cardFooter}>
@@ -513,6 +525,8 @@ const s = StyleSheet.create({
 
   acceptedBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, borderRadius: 8, padding: 10, marginBottom: 10 },
   acceptedBarTxt: { fontSize: 13, color: C.success, fontWeight: '600' },
+  suiviLiveBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: 8, padding: 10, marginBottom: 10 },
+  suiviLiveBarTxt: { flex: 1, fontSize: 13, color: C.accent, fontWeight: '700' },
 
   hintBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, borderWidth: 1.5, padding: 10, marginBottom: 4 },
   hintBarTxt: { fontSize: 13, fontWeight: '600' },

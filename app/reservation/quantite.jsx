@@ -7,6 +7,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useReservation, ProgressBar } from '../../src/context/ReservationContext';
 
+const TYPES_LABELS = {
+  meubles: 'Meubles', electromenager: 'Électroménager', cartons: 'Cartons',
+  alimentation: 'Alimentation', materiaux: 'Matériaux BTP',
+  vehicule: 'Véhicule', autre: 'Autre',
+};
+
 const SOUS_CATEGORIES = {
   meubles: [
     { key: 'lit',     label: 'Lit',             veh: 'fourgon' },
@@ -54,6 +60,23 @@ const VEH_LABELS = {
   camion35: 'Camion 3.5T', camion10: 'Camion 10T', semi: 'Semi-remorque',
 };
 
+// Ordre de "taille" des véhicules, du plus petit au plus grand — sert à
+// choisir le véhicule recommandé le plus grand parmi toutes les
+// catégories sélectionnées (voir calculerVehiculeOptimal).
+const VEH_RANG = { utilitaire: 1, herbine: 2, fourgon: 3, camion35: 4, camion10: 5, semi: 6 };
+
+function calculerVehiculeOptimal(categories, optionsCategories) {
+  let best = null;
+  for (const cat of categories) {
+    const scKey = optionsCategories[cat];
+    if (!scKey) continue;
+    const sc = (SOUS_CATEGORIES[cat] || []).find(s => s.key === scKey);
+    if (!sc?.veh) continue;
+    if (!best || (VEH_RANG[sc.veh] || 0) > (VEH_RANG[best] || 0)) best = sc.veh;
+  }
+  return best;
+}
+
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
@@ -63,22 +86,40 @@ const C = {
 
 export default function Quantite() {
   const router = useRouter();
-  const { category, sousCategorie, quantite, description, setField } = useReservation();
+  const { categories, optionsCategories, quantite, description, update } = useReservation();
 
-  const [localSC,    setLocalSC]    = useState(sousCategorie || '');
-  const [localPoids, setLocalPoids] = useState(quantite      || '');
-  const [localDesc,  setLocalDesc]  = useState(description   || '');
+  const cats = categories?.length ? categories : [];
+  // { [categoryKey]: sousCategorieKey } — une sous-catégorie par catégorie
+  const [localOptions, setLocalOptions] = useState(optionsCategories || {});
+  const [localPoids,   setLocalPoids]   = useState(quantite    || '');
+  const [localDesc,    setLocalDesc]    = useState(description || '');
 
-  const scList = SOUS_CATEGORIES[category] || [];
-  const scInfo = scList.find(s => s.key === localSC);
-  const vehRec = scInfo ? (Array.isArray(scInfo.veh) ? scInfo.veh[0] : scInfo.veh) : null;
-  const warn   = scInfo?.warn;
+  const selectSousCategorie = (cat, scKey) => {
+    setLocalOptions(prev => ({
+      ...prev,
+      [cat]: prev[cat] === scKey ? undefined : scKey, // retoggle → désélectionne
+    }));
+  };
+
+  // Avertissements de TOUTES les sous-catégories choisies (pas juste la
+  // dernière) — une course peut cumuler plusieurs contraintes.
+  const warnings = cats
+    .map(cat => {
+      const scKey = localOptions[cat];
+      const sc = (SOUS_CATEGORIES[cat] || []).find(s => s.key === scKey);
+      return sc?.warn ? { cat, warn: sc.warn } : null;
+    })
+    .filter(Boolean);
+
+  const vehRec = calculerVehiculeOptimal(cats, localOptions);
 
   const handleNext = () => {
-    setField('sousCategorie', localSC);
-    setField('quantite',      localPoids.trim());
-    setField('description',   localDesc.trim());
-    if (vehRec) setField('vehicule', vehRec);
+    update({
+      optionsCategories: localOptions,
+      quantite:           localPoids.trim(),
+      description:        localDesc.trim(),
+      ...(vehRec ? { vehicule: vehRec } : {}),
+    });
     router.push('/reservation/vehicule');
   };
 
@@ -100,29 +141,33 @@ export default function Quantite() {
       >
         <Text style={s.stepLabel}>Étape 3 / 6</Text>
         <Text style={s.title}>Détails</Text>
-        <Text style={s.sub}>Précise ce que tu transportes.</Text>
+        <Text style={s.sub}>Précise ce que tu transportes, pour chaque type choisi.</Text>
 
-        {scList.length > 0 && (
-          <>
-            <Text style={s.fieldLabel}>Type exact</Text>
-            <View style={s.chipRow}>
-              {scList.map(item => {
-                const active = localSC === item.key;
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[s.chip, active && s.chipActive]}
-                    onPress={() => setLocalSC(active ? '' : item.key)}
-                    activeOpacity={0.8}
-                  >
-                    {active && <Ionicons name="checkmark-circle" size={13} color={C.accent} style={{ marginRight: 4 }} />}
-                    <Text style={[s.chipTxt, active && s.chipTxtActive]}>{item.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+        {cats.map(cat => {
+          const scList = SOUS_CATEGORIES[cat] || [];
+          if (scList.length === 0) return null;
+          return (
+            <View key={cat} style={{ marginBottom: 4 }}>
+              <Text style={s.fieldLabel}>{TYPES_LABELS[cat] || cat}</Text>
+              <View style={s.chipRow}>
+                {scList.map(item => {
+                  const active = localOptions[cat] === item.key;
+                  return (
+                    <TouchableOpacity
+                      key={item.key}
+                      style={[s.chip, active && s.chipActive]}
+                      onPress={() => selectSousCategorie(cat, item.key)}
+                      activeOpacity={0.8}
+                    >
+                      {active && <Ionicons name="checkmark-circle" size={13} color={C.accent} style={{ marginRight: 4 }} />}
+                      <Text style={[s.chipTxt, active && s.chipTxtActive]}>{item.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
-          </>
-        )}
+          );
+        })}
 
         {vehRec && (
           <View style={s.vehRec}>
@@ -134,12 +179,12 @@ export default function Quantite() {
           </View>
         )}
 
-        {warn && (
-          <View style={s.warnBox}>
+        {warnings.map(({ cat, warn }) => (
+          <View key={cat} style={s.warnBox}>
             <Ionicons name="warning-outline" size={18} color="#92400E" style={{ marginRight: 10, flexShrink: 0, marginTop: 1 }} />
             <Text style={s.warnTxt}>{warn}</Text>
           </View>
-        )}
+        ))}
 
         <Text style={s.fieldLabel}>Poids estimé</Text>
         <TextInput

@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../src/context/AppContext';
 import { useNotifications } from '../../src/hooks/useNotifications';
@@ -8,13 +8,25 @@ import { NotifBanner } from '../../src/components/NotifBanner';
 
 export default function TabLayout() {
   const { user }                          = useApp();
+  const router                            = useRouter();
   const isT                               = user?.type === 'transporteur';
   const { unread, banner, dismissBanner } = useNotifications(user?.id);
   const msgUnread                         = useMessagesBadge(user?.id);
 
+  const handleBannerPress = (notif: any) => {
+    dismissBanner();
+    try {
+      const data = notif?.data_json ? JSON.parse(notif.data_json) : {};
+      if (data.route) router.push(data.route as any);
+      else router.push('/notifications' as any);
+    } catch {
+      router.push('/notifications' as any);
+    }
+  };
+
   return (
     <View style={{ flex: 1 }}>
-      <NotifBanner notification={banner} onDismiss={dismissBanner} />
+      <NotifBanner notification={banner} onDismiss={dismissBanner} onPress={handleBannerPress} />
 
       <Tabs
         screenOptions={{
@@ -49,11 +61,6 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={isT ? (focused ? 'car-sport' : 'car-sport-outline') : (focused ? 'list' : 'list-outline')} size={22} color={color} />
             ),
-            tabBarBadge: unread > 0 ? (unread > 9 ? '9+' : unread) : undefined,
-            tabBarBadgeStyle: {
-              backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
-              minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,
-            },
           }}
         />
 
@@ -65,6 +72,21 @@ export default function TabLayout() {
               <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={22} color={color} />
             ),
             tabBarBadge: msgUnread > 0 ? (msgUnread > 9 ? '9+' : msgUnread) : undefined,
+            tabBarBadgeStyle: {
+              backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
+              minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,
+            },
+          }}
+        />
+
+        <Tabs.Screen
+          name="notifications"
+          options={{
+            title: 'Alertes',
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'notifications' : 'notifications-outline'} size={22} color={color} />
+            ),
+            tabBarBadge: unread > 0 ? (unread > 9 ? '9+' : unread) : undefined,
             tabBarBadgeStyle: {
               backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
               minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,

@@ -1,16 +1,19 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Platform, StatusBar, ActivityIndicator,
   Alert, KeyboardAvoidingView, RefreshControl,
   Animated, Dimensions, Modal,
 } from 'react-native';
-import { Redirect, useRouter, useFocusEffect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { WebView } from 'react-native-webview';
 import { useApp, parseDemandeTime, msToCountdown } from '../../src/context/AppContext';
 import { demandesDB, usersDB, offresDB, notifDB, agendaDB, gainsDB } from '../../src/db/database';
-import { getDistanceKm, fmtKm, WILAYA_COORDS } from '../../src/utils/wilayas';
+import { fmtKm, WILAYA_COORDS } from '../../src/utils/wilayas';
+import { getDistanceKmPrecise as getDistanceKm, getCoordsVille, haversineDistance } from '../../src/utils/distance';
+import { calculerPositionSimulee } from '../../src/lib/simulationTrajet';
 import { calculerPrix, calculerSurge, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
 import { useReservation } from '../../src/context/ReservationContext';
 import { useLanguage } from '../../src/i18n';
@@ -147,6 +150,12 @@ const VEH_ICONS = {
   camion10:   'cube-outline',
   semi:       'construct-outline',
 };
+// Emoji pour le marqueur camion de la mini-carte (WebView/Leaflet ne peut
+// pas afficher les icônes vectorielles Ionicons) — voir CourseEnCours.
+const VEH_EMOJI = {
+  herbine: '🚗', utilitaire: '🚙', fourgon: '🚐',
+  camion35: '🚛', camion10: '🚚', semi: '🚛',
+};
 
 function Logo() {
   return (
@@ -162,6 +171,205 @@ const ls = StyleSheet.create({
   express: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
 });
 
+// ── Mini-carte "course en cours" (style Uber) ─────────────────
+// WebView + Leaflet/OpenStreetMap — même solution que app/suivi-live/[id]
+// et app/carte-transporteurs.jsx, pour éviter le fond de carte vide de
+// react-native-maps sur Android sans clé Google Maps. Gestes désactivés
+// (dragging/zoom) : c'est un aperçu, pas une carte à manipuler — on tape
+// dessus pour ouvrir le suivi complet.
+const suiviMiniHTML = (departLat, departLon, destLat, destLon, vehiculeEmoji) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { width: 100vw; height: 100vh; }
+    .camion-marker {
+      background: #0A0A0A; border: 3px solid #fff; border-radius: 50%;
+      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+      font-size: 20px; box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+    }
+    .dest-marker { font-size: 26px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4)); }
+    .leaflet-marker-icon.camion-icon { transition: transform 0.5s linear; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', {
+      zoomControl: false, attributionControl: false,
+      dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false,
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+    var destIcon   = L.divIcon({ className: '', html: '<div class="dest-marker">📍</div>', iconSize: [26, 26], iconAnchor: [13, 24] });
+    var camionIcon = L.divIcon({ className: 'camion-icon', html: '<div class="camion-marker">${vehiculeEmoji}</div>', iconSize: [40, 40], iconAnchor: [20, 20] });
+
+    var depart = [${departLat}, ${departLon}];
+    var dest   = [${destLat}, ${destLon}];
+
+    L.marker(dest, { icon: destIcon }).addTo(map);
+    var camionMarker = L.marker(depart, { icon: camionIcon }).addTo(map);
+    L.polyline([depart, dest], { color: '#1A56DB', weight: 3, dashArray: '6,8' }).addTo(map);
+
+    map.fitBounds(L.latLngBounds([depart, dest]), { padding: [40, 40], maxZoom: 14 });
+
+    window.updateTruck = function (lat, lng) {
+      camionMarker.setLatLng([lat, lng]);
+    };
+  </script>
+</body>
+</html>
+`;
+
+/**
+ * Remplace tout l'écran d'accueil quand l'expéditeur a une course
+ * "acceptee" ou "en_route" — comme Uber qui bascule sur le suivi dès
+ * qu'une course est active plutôt que de montrer l'accueil normal.
+ *
+ * ⚠️ Simulation : voir l'avertissement détaillé en tête de
+ * app/suivi-live/[id].jsx (pas de backend → pas de vraie position
+ * cross-appareil). Le camion ne bouge que si la course est "en_route" ;
+ * pendant "acceptee" il reste parqué au point de départ. La position est
+ * calculée via calculerPositionSimulee (temps écoulé depuis en_route_at),
+ * pas un compteur local — cette mini-carte et l'écran de suivi complet
+ * (bouton "Suivi complet") affichent donc toujours la même position.
+ */
+function CourseEnCours({ demande, router }) {
+  const webviewRef = useRef(null);
+  const [webviewReady, setWebviewReady]         = useState(false);
+  const [distanceRestante, setDistanceRestante] = useState(null);
+
+  const departCoords = useMemo(() => getCoordsVille(demande.ville_depart),  [demande.ville_depart]);
+  const destCoords   = useMemo(() => getCoordsVille(demande.ville_arrivee), [demande.ville_arrivee]);
+  const vehiculeEmoji = VEH_EMOJI[demande.vehicule_recommande] || '🚛';
+
+  const html = useMemo(
+    () => (departCoords && destCoords ? suiviMiniHTML(departCoords.lat, departCoords.lng, destCoords.lat, destCoords.lng, vehiculeEmoji) : null),
+    [departCoords, destCoords, vehiculeEmoji]
+  );
+
+  const enRouteAt = demande.en_route_at || demande.accepted_at || null;
+
+  useEffect(() => {
+    if (!webviewReady || demande.statut !== 'en_route' || !departCoords || !destCoords || !enRouteAt) return;
+
+    const tick = () => {
+      const pos = calculerPositionSimulee(enRouteAt, departCoords, destCoords);
+      if (!pos) return;
+      webviewRef.current?.injectJavaScript(
+        `window.updateTruck && window.updateTruck(${pos.lat}, ${pos.lng}); true;`
+      );
+      setDistanceRestante(haversineDistance(pos.lat, pos.lng, destCoords.lat, destCoords.lng));
+    };
+
+    tick();
+    const interval = setInterval(tick, 3000);
+    return () => clearInterval(interval);
+  }, [webviewReady, demande.statut, departCoords, destCoords, enRouteAt]);
+
+  const eta = distanceRestante != null ? Math.max(1, Math.round(distanceRestante * 2)) : null;
+
+  if (!html) return null;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* Mini carte en haut */}
+      <View style={{ height: '55%' }}>
+        <WebView
+          ref={webviewRef}
+          source={{ html }}
+          onLoadEnd={() => setWebviewReady(true)}
+          javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={['*']}
+          style={{ flex: 1 }}
+        />
+        <View style={cec.simBadge}>
+          <Text style={cec.simBadgeTxt}>🧪 Simulation — pas une vraie position GPS</Text>
+        </View>
+      </View>
+
+      {/* Card info course en bas */}
+      <View style={cec.card}>
+        {/* Statut */}
+        <View style={cec.statutRow}>
+          <View style={[cec.statutDot, demande.statut === 'en_route' ? cec.dotVert : cec.dotOrange]} />
+          <Text style={cec.statutTxt}>
+            {demande.statut === 'acceptee'
+              ? '✅ Transporteur assigné — En attente de démarrage'
+              : '🚛 Votre transporteur est en route !'}
+          </Text>
+        </View>
+
+        {/* ETA */}
+        {demande.statut === 'en_route' && distanceRestante != null && (
+          <View style={cec.etaBox}>
+            <Text style={cec.etaTxt}>{distanceRestante} km restants · ETA ~{eta} min</Text>
+          </View>
+        )}
+
+        <View style={cec.driverRow}>
+          <View style={cec.avatar}><Text style={{ fontSize: 20 }}>{vehiculeEmoji}</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={cec.driverName}>{demande.transporteur_nom || 'Ton transporteur'}</Text>
+            <Text style={cec.routeTxt} numberOfLines={1}>{demande.ville_depart} → {demande.ville_arrivee}</Text>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity style={cec.detailBtn} onPress={() => router.push(`/suivi-live/${demande.id}`)} activeOpacity={0.88}>
+            <Ionicons name="map-outline" size={16} color={C.primary} style={{ marginRight: 6 }} />
+            <Text style={cec.detailBtnTxt}>Suivi complet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={cec.chatBtn} onPress={() => router.push(`/chat/${demande.id}`)} activeOpacity={0.88}>
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={cec.chatBtnTxt}>Contacter</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const cec = StyleSheet.create({
+  simBadge: {
+    position: 'absolute', bottom: 10, left: 12, right: 12,
+    backgroundColor: 'rgba(249,115,22,0.95)', borderRadius: 10,
+    paddingVertical: 6, alignItems: 'center',
+  },
+  simBadgeTxt: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+
+  card: {
+    flex: 1, backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    marginTop: -20, padding: 20,
+    elevation: 16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 10,
+  },
+  statutRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  statutDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
+  dotOrange: { backgroundColor: C.accent },
+  dotVert:   { backgroundColor: C.success },
+  statutTxt: { flex: 1, fontSize: 14, fontWeight: '700', color: C.text },
+
+  etaBox: { backgroundColor: C.successLight, borderRadius: 10, borderWidth: 1, borderColor: '#6EE7B7', paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14 },
+  etaTxt: { fontSize: 13, fontWeight: '700', color: C.success, textAlign: 'center' },
+
+  driverRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  avatar:    { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginRight: 12, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 },
+  driverName:{ fontSize: 15, fontWeight: '800', color: C.text },
+  routeTxt:  { fontSize: 12, color: C.muted, marginTop: 2 },
+
+  detailBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border, borderRadius: 50, paddingVertical: 14 },
+  detailBtnTxt: { fontSize: 13, fontWeight: '800', color: C.text },
+  chatBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 14 },
+  chatBtnTxt:   { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+});
+
 // ════════════════════════════════════════════════════════════
 // ── EXPÉDITEUR ───────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════
@@ -170,6 +378,7 @@ function ExpéditeurHome({ user }) {
   const { setField, reset, setOption } = useReservation();
   const { t } = useLanguage();
 
+  const [allDemandes, setAllDemandes] = useState([]);
   const [recentDemandes, setRecentDemandes] = useState([]);
   const [nbTransporteurs, setNbTransporteurs] = useState(0);
 
@@ -182,17 +391,30 @@ function ExpéditeurHome({ user }) {
     return () => clearInterval(id);
   }, []);
 
-  useFocusEffect(useCallback(() => {
-    try {
-      setRecentDemandes(demandesDB.getByExpediteur(user.id).slice(0, 3));
-    } catch {}
-  }, [user.id]));
+  // Poll (pas seulement au focus) : une course "acceptee"/"en_route" doit
+  // se mettre à jour même en restant sur cet onglet — voir CourseEnCours.
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const all = demandesDB.getByExpediteur(user.id);
+        setAllDemandes(all);
+        setRecentDemandes(all.slice(0, 3));
+      } catch {}
+    };
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, [user.id]);
+
+  // Course active → remplace tout l'écran d'accueil (voir CourseEnCours).
+  const activeDemande = allDemandes.find(d => ['acceptee', 'en_route'].includes(d.statut)) || null;
+  if (activeDemande) return <CourseEnCours demande={activeDemande} router={router} />;
 
   const refaire = (d) => {
     reset();
     setField('departure',  d.ville_depart);
     setField('arrival',    d.ville_arrivee);
-    setField('category',   d.type_marchandise);
+    setField('categories', (d.type_marchandise || '').split(',').filter(Boolean));
     setField('mode',       d.type_demande || 'planifie');
     if (d.poids)       setField('quantite',    d.poids);
     if (d.description) setField('description', d.description);
@@ -323,7 +545,7 @@ function ExpéditeurHome({ user }) {
                 style={qs.card}
                 onPress={() => {
                   reset();
-                  setField('category', cat.key);
+                  setField('categories', [cat.key]);
                   router.push('/reservation/marchandise');
                 }}
                 activeOpacity={0.8}

@@ -69,7 +69,7 @@ export const WILAYA_COORDS = {
 // ── Haversine ────────────────────────────────────────────────
 function toRad(deg) { return (deg * Math.PI) / 180; }
 
-function haversineKm(lat1, lng1, lat2, lng2) {
+export function haversineKm(lat1, lng1, lat2, lng2) {
   const R    = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
@@ -134,10 +134,21 @@ export function searchVilles(query, list, max = 8) {
  * "Kouba — Alger" → "Alger"
  * "Alger"         → "Alger"  (déjà une wilaya)
  */
-function extractWilaya(cityLabel) {
+export function extractWilaya(cityLabel) {
   if (!cityLabel) return null;
   if (cityLabel.includes(' — ')) return cityLabel.split(' — ')[1].trim();
   return cityLabel;
+}
+
+/**
+ * Extrait la partie "commune" d'un label CityInput (avant le " — ").
+ * "Kouba — Alger" → "Kouba"
+ * "Toghza, Chorfa — Bouira" → "Toghza, Chorfa"
+ * "Alger" (juste une wilaya, pas de commune précise) → null
+ */
+export function extractCommune(cityLabel) {
+  if (!cityLabel || !cityLabel.includes(' — ')) return null;
+  return cityLabel.split(' — ')[0].trim();
 }
 
 /**
@@ -152,6 +163,22 @@ function extractWilaya(cityLabel) {
  *   • Villes inconnues → null (pas d'affichage)
  *   • Résultat × 1.25 pour approcher la distance route réelle
  */
+/**
+ * Wilaya la plus proche d'un point GPS (distance à vol d'oiseau sur
+ * les wilayas connues dans WILAYA_COORDS).
+ * Note : on n'a que des coordonnées au niveau wilaya (pas de GPS par
+ * commune dans communes.js), donc la précision s'arrête là.
+ */
+export function nearestWilaya(lat, lng) {
+  let best = null, bestDist = Infinity;
+  for (const [name, c] of Object.entries(WILAYA_COORDS)) {
+    if (name === 'Alger Centre') continue; // alias de "Alger", évite un doublon
+    const d = haversineKm(lat, lng, c.lat, c.lng);
+    if (d < bestDist) { bestDist = d; best = name; }
+  }
+  return best;
+}
+
 export function getDistanceKm(ville1, ville2) {
   if (!ville1 || !ville2) return null;
 

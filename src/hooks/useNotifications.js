@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { notifDB } from '../db/database';
+import { envoyerNotificationLocale, notifMeta } from '../lib/notifications';
 
 /**
  * Polle SQLite toutes les 5 s pour trouver les nouvelles notifications.
@@ -28,6 +29,13 @@ export function useNotifications(userId) {
         if (newest) {
           shownIds.current.add(newest.id);
           setBanner(newest);
+          // Double la bannière in-app d'une vraie notification OS (tiroir
+          // système, écran verrouillé) — fonctionne dès aujourd'hui, sans
+          // serveur, puisqu'émise par l'appareil pour son propre
+          // utilisateur (voir src/lib/notifications.js).
+          let data = {};
+          try { data = newest.data_json ? JSON.parse(newest.data_json) : {}; } catch (_) {}
+          envoyerNotificationLocale(notifMeta(newest.type).label, newest.message, data);
         }
       }
     } catch (_) { /* silencieux */ }
@@ -54,5 +62,9 @@ export function useNotifications(userId) {
     setBanner(null);
   }, [userId]);
 
-  return { unread, banner, dismissBanner, markAllRead, poll };
+  const markRead = useCallback((notifId) => {
+    try { notifDB.markRead(notifId); poll(); } catch (_) {}
+  }, [poll]);
+
+  return { unread, banner, dismissBanner, markAllRead, markRead, poll };
 }

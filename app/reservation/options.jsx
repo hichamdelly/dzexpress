@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useReservation, ProgressBar } from '../../src/context/ReservationContext';
 import { calculerPrix, calculerSurge, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
-import { getDistanceKm } from '../../src/utils/wilayas';
+import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
 import { demandesDB } from '../../src/db/database';
 
 const C = {

@@ -52,6 +52,8 @@ export default function ProfilScreen() {
   const [wilayaQ, setWilayaQ]   = useState('');
   const [showW, setShowW]       = useState(false);
   const [vehicule, setVehicule] = useState(user?.vehicule || '');
+  const [ccpNumero, setCcpNumero] = useState(user?.ccp_numero || '');
+  const [ccpCle, setCcpCle]       = useState(user?.ccp_cle || '');
   const [dispo, setDispo]       = useState(user?.disponible === 1);
   const [heureEnLigne, setHeureEnLigne] = useState(null);
   const [saving, setSaving]     = useState(false);
@@ -83,6 +85,9 @@ export default function ProfilScreen() {
         vehicule: isT ? vehicule : null,
         disponible: dispo ? 1 : 0,
       });
+      if (isT) {
+        usersDB.updateCCP(user.id, { ccp_numero: ccpNumero.trim(), ccp_cle: ccpCle.trim() });
+      }
       refreshUser();
       setEditing(false);
       Alert.alert('Profil mis à jour', 'Tes informations ont été sauvegardées.');
@@ -194,7 +199,9 @@ export default function ProfilScreen() {
             <TouchableOpacity style={s.editBtn} onPress={() => {
               setNom(user.nom); setTel(user.telephone || '');
               setWilaya(user.wilaya); setVehicule(user.vehicule || '');
-              setDispo(user.disponible === 1); setEditing(true);
+              setDispo(user.disponible === 1);
+              setCcpNumero(user.ccp_numero || ''); setCcpCle(user.ccp_cle || '');
+              setEditing(true);
             }}>
               <Ionicons name="pencil-outline" size={14} color={C.muted} />
               <Text style={s.editBtnTxt}>Modifier</Text>
@@ -253,6 +260,20 @@ export default function ProfilScreen() {
                     );
                   })}
                 </View>
+
+                <FieldLabel>Numéro CCP (BaridiMob)</FieldLabel>
+                <TextInput
+                  style={s.input} value={ccpNumero} onChangeText={setCcpNumero}
+                  placeholder="Ex : 0012345678 90"
+                  keyboardType="number-pad" placeholderTextColor="#9CA3AF"
+                />
+
+                <FieldLabel>Clé CCP</FieldLabel>
+                <TextInput
+                  style={s.input} value={ccpCle} onChangeText={setCcpCle}
+                  placeholder="Ex : 12"
+                  keyboardType="number-pad" maxLength={2} placeholderTextColor="#9CA3AF"
+                />
               </>
             )}
 
@@ -278,6 +299,13 @@ export default function ProfilScreen() {
                 iconName={VEHICULES.find(v => v.key === user.vehicule)?.icon || 'car-sport-outline'}
                 label="Véhicule"
                 value={VEHICULES.find(v => v.key === user.vehicule)?.label || user.vehicule}
+              />
+            )}
+            {isT && (
+              <InfoRow
+                iconName="card-outline"
+                label="CCP (BaridiMob)"
+                value={user.ccp_numero ? `${user.ccp_numero}${user.ccp_cle ? ` · Clé ${user.ccp_cle}` : ''}` : 'Non renseigné'}
               />
             )}
             <TouchableOpacity style={s.otpBtn}

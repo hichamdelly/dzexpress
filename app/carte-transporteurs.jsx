@@ -1,21 +1,22 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Platform,
   StatusBar, ActivityIndicator, Alert, Dimensions, ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { useApp, localNotif } from '../src/context/AppContext';
 import { demandesDB, notifDB } from '../src/db/database';
 import {
   genererTransporteurs, simulerReponse, simulerMouvement,
-  fmtDistance, fmtTimer,
+  fmtTimer,
 } from '../src/simulation/transporteurs';
-import { getDistanceKm, fmtKm } from '../src/utils/wilayas';
+import { fmtKm } from '../src/utils/wilayas';
+import { getDistanceKmPrecise as getDistanceKm } from '../src/utils/distance';
 
-const ALGER = { latitude: 36.737, longitude: 3.087 };
+const ALGER = { latitude: 36.7372, longitude: 3.0865 };
 
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
@@ -42,41 +43,129 @@ const VEH_LABEL = {
   camion10:   'Camion 10T',
   semi:       'Semi-remorque',
 };
+// Couleur du marqueur selon le type de véhicule (quand le transporteur est disponible)
+const VEH_COLOR = {
+  herbine:    '#10B981',
+  utilitaire: '#8B5CF6',
+  fourgon:    '#1A56DB',
+  camion35:   '#F97316',
+  camion10:   '#EF4444',
+  semi:       '#1A56DB',
+};
+// Les marqueurs de la carte (WebView/Leaflet) ne peuvent pas afficher les
+// icônes vectorielles Ionicons (police propre à React Native) — on utilise
+// un emoji équivalent par véhicule uniquement pour ces marqueurs HTML.
+const VEH_EMOJI = {
+  herbine:    '🚗',
+  utilitaire: '🚙',
+  fourgon:    '🚐',
+  camion35:   '🚛',
+  camion10:   '🚚',
+  semi:       '🚛',
+};
 
-// ── Marqueur transporteur ────────────────────────────────────
-function TransporteurMarker({ t, selected, onPress }) {
-  const bg = t.disponible ? (selected ? C.accent : C.success) : '#9CA3AF';
-  return (
-    <Marker
-      coordinate={{ latitude: t.latitude, longitude: t.longitude }}
-      onPress={onPress}
-      anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges={false}
-    >
-      <View style={[mk.container, { backgroundColor: bg, borderColor: selected ? '#FFFFFF' : bg }]}>
-        <Ionicons name={VEH_ICON[t.vehicule] || 'car-sport-outline'} size={18} color="#FFFFFF" />
-      </View>
-      {selected && <View style={mk.pulse} />}
-    </Marker>
-  );
+/** Distance haversine en km (string, 1 décimale) entre deux points GPS. */
+function calculerDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(1);
 }
-const mk = StyleSheet.create({
-  container: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 3, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
-  pulse:     { position: 'absolute', width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(249,115,22,0.18)', top: -7, left: -7 },
-});
 
-// ── Marqueur Ma position ─────────────────────────────────────
-function MaPositionMarker({ coord }) {
-  return (
-    <Marker coordinate={coord} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-      <View style={mp.outer}><View style={mp.inner} /></View>
-    </Marker>
-  );
-}
-const mp = StyleSheet.create({
-  outer: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(249,115,22,0.22)', alignItems: 'center', justifyContent: 'center' },
-  inner: { width: 12, height: 12, borderRadius: 6, backgroundColor: C.accent, borderWidth: 2, borderColor: '#FFFFFF' },
-});
+// ── Carte (WebView + Leaflet/OpenStreetMap) ──────────────────
+// react-native-maps (PROVIDER_DEFAULT → Google Maps sur Android) affiche
+// un fond de carte vide sans clé Google Maps API configurée. On utilise à
+// la place une WebView chargeant Leaflet + des tuiles OpenStreetMap
+// (gratuit, sans clé), même solution que app/select-location.jsx.
+//
+// Les marqueurs des transporteurs bougent (simulation toutes les 30s) et
+// sont cliquables : la liste complète est repoussée dans la WebView via
+// injectJavaScript (window.updateMarkers) à chaque changement, et un clic
+// sur un marqueur remonte vers React Native via postMessage.
+//
+// Note usage : tile.openstreetmap.org est un service public à usage
+// raisonnable — voir la note dans app/select-location.jsx.
+const mapHTML = (latitude, longitude) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { width: 100vw; height: 100vh; background: #F5F5F5; }
+    .t-marker {
+      width: 40px; height: 40px; border-radius: 20px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; border: 3px solid #fff; box-sizing: border-box;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .t-marker.selected {
+      border-color: #F97316;
+      box-shadow: 0 0 0 6px rgba(249,115,22,0.22), 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .my-pos {
+      width: 16px; height: 16px; border-radius: 8px;
+      background: #1A56DB; border: 3px solid #fff; box-sizing: border-box;
+      box-shadow: 0 0 0 6px rgba(26,86,219,0.22);
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', { zoomControl: true, attributionControl: false })
+      .setView([${latitude}, ${longitude}], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+    var myCircle = L.circle([${latitude}, ${longitude}], {
+      radius: 15000, color: 'rgba(10,10,10,0.15)', weight: 1, fillColor: 'rgba(10,10,10,0.03)', fillOpacity: 1,
+    }).addTo(map);
+    var myMarker = L.marker([${latitude}, ${longitude}], {
+      icon: L.divIcon({ className: '', html: '<div class="my-pos"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+      interactive: false,
+    }).addTo(map);
+
+    var markersLayer = L.layerGroup().addTo(map);
+
+    // Appelé depuis React Native à chaque changement de la liste des
+    // transporteurs (chargement initial, mouvement simulé, sélection).
+    window.updateMarkers = function (json) {
+      var payload = JSON.parse(json);
+      markersLayer.clearLayers();
+      payload.transporteurs.forEach(function (t) {
+        var cls = 't-marker' + (t.selected ? ' selected' : '');
+        var icon = L.divIcon({
+          className: '',
+          html: '<div class="' + cls + '" style="background:' + t.color + '">' + t.emoji + '</div>',
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+        });
+        var marker = L.marker([t.latitude, t.longitude], { icon: icon }).addTo(markersLayer);
+        marker.on('click', function () {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'select', id: t.id }));
+          }
+        });
+      });
+    };
+
+    // Appelé depuis React Native quand la position GPS de l'utilisateur
+    // change (bouton "rafraîchir").
+    window.recenterMap = function (lat, lng) {
+      map.setView([lat, lng], map.getZoom());
+      myMarker.setLatLng([lat, lng]);
+      myCircle.setLatLng([lat, lng]);
+    };
+  </script>
+</body>
+</html>
+`;
 
 // ── Ligne méta du sheet ──────────────────────────────────────
 function SheetMeta({ iconName, label }) {
@@ -100,12 +189,14 @@ export default function CarteTransporteursScreen() {
   const { depart, arrivee, type, poids, desc } = params;
   const routeKm = getDistanceKm(depart, arrivee);
 
-  const mapRef          = useRef(null);
-  const cancelSimRef    = useRef(null);
-  const moveIntervalRef = useRef(null);
+  const webviewRef       = useRef(null);
+  const cancelSimRef     = useRef(null);
+  const moveIntervalRef  = useRef(null);
 
   const [phase, setPhase]               = useState('loading');
   const [myPos, setMyPos]               = useState(null);
+  const [mapHtml, setMapHtml]           = useState(null);
+  const [webviewReady, setWebviewReady] = useState(false);
   const [noPermission, setNoPermission] = useState(false);
   const [locationErr, setLocationErr]   = useState(null);
   const [transporteurs, setTransporteurs] = useState([]);
@@ -114,26 +205,58 @@ export default function CarteTransporteursScreen() {
   const [acceptedT, setAcceptedT]       = useState(null);
   const [demandeId, setDemandeId]       = useState(null);
 
+  // Transporteurs enrichis d'une distance réelle (haversine) depuis la
+  // position de l'utilisateur, triés du plus proche au plus loin.
+  const transporteursTries = useMemo(() => {
+    if (!myPos) return transporteurs;
+    return transporteurs
+      .map(t => ({
+        ...t,
+        distance_km: parseFloat(calculerDistance(myPos.latitude, myPos.longitude, t.latitude, t.longitude)),
+      }))
+      .sort((a, b) => a.distance_km - b.distance_km);
+  }, [transporteurs, myPos]);
+
   const chargerPosition = useCallback(async () => {
     setPhase('loading');
     setNoPermission(false);
+    let latitude = ALGER.latitude, longitude = ALGER.longitude;
+    let usedFallback = false;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      let latitude, longitude;
       if (status !== 'granted') {
-        latitude = ALGER.latitude; longitude = ALGER.longitude;
-        setNoPermission(true);
+        usedFallback = true;
       } else {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        latitude = pos.coords.latitude; longitude = pos.coords.longitude;
+        try {
+          // On borne l'attente GPS : certains devices/émulateurs ne répondent
+          // jamais, ce qui bloquait l'écran en phase "loading" sans jamais
+          // afficher la carte ni les transporteurs.
+          const pos = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('gps_timeout')), 8000)),
+          ]);
+          latitude = pos.coords.latitude;
+          longitude = pos.coords.longitude;
+        } catch (gpsErr) {
+          // GPS indisponible/timeout → on ne bloque pas l'écran, on replie sur Alger.
+          console.log('Position GPS indisponible, repli sur Alger par défaut:', gpsErr?.message);
+          usedFallback = true;
+        }
       }
+      setNoPermission(usedFallback);
       setMyPos({ latitude, longitude });
-      setTransporteurs(genererTransporteurs(latitude, longitude, 8, routeKm));
+      // La WebView n'est construite qu'une seule fois (au premier chargement
+      // réussi) — un rafraîchissement ultérieur repositionne la carte déjà
+      // montée via recenterMap plutôt que de recharger toute la page HTML.
+      setMapHtml(prev => prev || mapHTML(latitude, longitude));
+      const dispos = genererTransporteurs(latitude, longitude, 8, routeKm);
+      console.log('Transporteurs trouvés:', dispos.length);
+      setTransporteurs(dispos);
       setPhase('map');
-      setTimeout(() => {
-        mapRef.current?.animateToRegion({ latitude, longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 }, 800);
-      }, 400);
-    } catch {
+    } catch (e) {
+      // Erreur réellement inattendue (ex: génération des transporteurs) —
+      // on tente quand même un dernier repli sur Alger plutôt que de bloquer.
+      console.log('Erreur chargement carte transporteurs:', e?.message);
       setLocationErr('GPS indisponible. Vérifie que la localisation est activée.');
       setPhase('error');
     }
@@ -163,6 +286,45 @@ export default function CarteTransporteursScreen() {
     cancelSimRef.current?.();
     clearInterval(moveIntervalRef.current);
   }, []);
+
+  // Pousse la liste des transporteurs (position, couleur, sélection) dans
+  // la WebView à chaque changement — chargement initial, mouvement simulé
+  // toutes les 30s, ou sélection d'un marqueur/carte mini-liste.
+  useEffect(() => {
+    if (!webviewReady) return;
+    const payload = JSON.stringify({
+      transporteurs: transporteursTries.map(t => ({
+        id: t.id,
+        latitude: t.latitude,
+        longitude: t.longitude,
+        emoji: VEH_EMOJI[t.vehicule] || '🚛',
+        color: t.disponible ? (selected?.id === t.id ? C.accent : (VEH_COLOR[t.vehicule] || C.success)) : '#9CA3AF',
+        selected: selected?.id === t.id,
+      })),
+    });
+    webviewRef.current?.injectJavaScript(
+      `window.updateMarkers && window.updateMarkers(${JSON.stringify(payload)}); true;`
+    );
+  }, [webviewReady, transporteursTries, selected]);
+
+  // Recentre la carte (déjà montée) quand la position GPS change, ex. via
+  // le bouton "rafraîchir" — la WebView elle-même n'est jamais rechargée.
+  useEffect(() => {
+    if (!webviewReady || !myPos) return;
+    webviewRef.current?.injectJavaScript(
+      `window.recenterMap && window.recenterMap(${myPos.latitude}, ${myPos.longitude}); true;`
+    );
+  }, [webviewReady, myPos]);
+
+  const handleWebViewMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'select' && phase === 'map') {
+        const t = transporteursTries.find(x => x.id === data.id);
+        if (t) setSelected(t);
+      }
+    } catch { /* message non exploitable, on ignore */ }
+  };
 
   const envoyerDemande = (t) => {
     if (!t.disponible) {
@@ -215,8 +377,8 @@ export default function CarteTransporteursScreen() {
   if (phase === 'loading') return (
     <View style={s.fullCenter}>
       <StatusBar barStyle="dark-content" />
-      <ActivityIndicator size="large" color={C.primary} />
-      <Text style={s.loadingTxt}>Recherche des transporteurs près de toi…</Text>
+      <ActivityIndicator size="large" color={C.accent} />
+      <Text style={s.loadingTxt}>Recherche des transporteurs autour de vous…</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
         <Ionicons name="location-outline" size={14} color={C.muted} />
         <Text style={s.loadingTxt2}>Localisation en cours</Text>
@@ -304,27 +466,24 @@ export default function CarteTransporteursScreen() {
     </View>
   );
 
-  const disponibles = transporteurs.filter(t => t.disponible);
-  const occupes     = transporteurs.filter(t => !t.disponible);
+  const disponibles = transporteursTries.filter(t => t.disponible);
+  const occupes     = transporteursTries.filter(t => !t.disponible);
 
   return (
     <View style={{ flex: 1 }}>
       <StatusBar barStyle="dark-content" />
 
-      {myPos && (
-        <MapView
-          ref={mapRef}
+      {mapHtml && (
+        <WebView
+          ref={webviewRef}
           style={StyleSheet.absoluteFill}
-          provider={PROVIDER_DEFAULT}
-          initialRegion={{ latitude: myPos.latitude, longitude: myPos.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 }}
-          showsCompass showsScale
-        >
-          <Circle center={myPos} radius={5000} strokeColor="rgba(10,10,10,0.15)" fillColor="rgba(10,10,10,0.03)" strokeWidth={1} />
-          <MaPositionMarker coord={myPos} />
-          {transporteurs.map(t => (
-            <TransporteurMarker key={`${t.id}-${t.moveKey || 0}`} t={t} selected={selected?.id === t.id} onPress={() => phase === 'map' && setSelected(t)} />
-          ))}
-        </MapView>
+          source={{ html: mapHtml }}
+          onMessage={handleWebViewMessage}
+          onLoadEnd={() => setWebviewReady(true)}
+          javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={['*']}
+        />
       )}
 
       {/* Header flottant */}
@@ -397,7 +556,7 @@ export default function CarteTransporteursScreen() {
 
           <View style={s.sheetMeta}>
             <SheetMeta iconName="star-outline" label={`${selected.rating} (${selected.nb_courses})`} />
-            <SheetMeta iconName="car-sport-outline" label={`${fmtDistance(selected.distance_m)}`} />
+            <SheetMeta iconName="car-sport-outline" label={`${selected.distance_km} km`} />
             {routeKm && <SheetMeta iconName="resize-outline" label={fmtKm(routeKm)} />}
             <SheetMeta iconName="wallet-outline" label={`~${(selected.prix_estime / 1000).toFixed(1)}k DA`} />
           </View>
@@ -405,7 +564,7 @@ export default function CarteTransporteursScreen() {
           {selected.disponible ? (
             <TouchableOpacity style={s.sendBtn} onPress={() => envoyerDemande(selected)} activeOpacity={0.88}>
               <Ionicons name="send-outline" size={18} color="#FFFFFF" style={{ marginRight: 9 }} />
-              <Text style={s.sendBtnTxt}>Envoyer la demande à {selected.nom.split(' ')[0]}</Text>
+              <Text style={s.sendBtnTxt}>Demander ce transporteur</Text>
             </TouchableOpacity>
           ) : (
             <View style={s.occupeMsg}>
@@ -413,6 +572,16 @@ export default function CarteTransporteursScreen() {
               <Text style={s.occupeMsgTxt}>Ce transporteur est en course — choisis-en un autre</Text>
             </View>
           )}
+
+          <TouchableOpacity
+            style={s.profileBtn}
+            onPress={() => Alert.alert(
+              selected.nom,
+              `${VEH_LABEL[selected.vehicule]}\n★ ${selected.rating} · ${selected.nb_courses} courses\n${selected.telephone}`,
+            )}
+          >
+            <Text style={s.profileBtnTxt}>Voir le profil</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity onPress={() => setSelected(null)} style={s.closeSheet}>
             <Text style={s.closeSheetTxt}>Fermer</Text>
@@ -481,17 +650,17 @@ export default function CarteTransporteursScreen() {
             </Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
-            {transporteurs.filter(t => t.disponible).map(t => (
+            {disponibles.map(t => (
               <TouchableOpacity key={t.id} style={s.miniCard} onPress={() => setSelected(t)} activeOpacity={0.85}>
-                <View style={s.miniIconBox}>
-                  <Ionicons name={VEH_ICON[t.vehicule] || 'car-sport-outline'} size={22} color={C.primary} />
+                <View style={[s.miniIconBox, { backgroundColor: VEH_COLOR[t.vehicule] ? `${VEH_COLOR[t.vehicule]}1A` : C.bg }]}>
+                  <Ionicons name={VEH_ICON[t.vehicule] || 'car-sport-outline'} size={22} color={VEH_COLOR[t.vehicule] || C.primary} />
                 </View>
                 <Text style={s.miniNom}>{t.nom.split(' ')[0]}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                   <Ionicons name="star" size={10} color={C.warning} />
                   <Text style={s.miniMeta}>{t.rating}</Text>
                 </View>
-                <Text style={s.miniMeta}>{fmtDistance(t.distance_m)}</Text>
+                <Text style={s.miniMeta}>{t.distance_km} km</Text>
                 <Text style={s.miniPrix}>~{(t.prix_estime / 1000).toFixed(1)}k DA</Text>
               </TouchableOpacity>
             ))}
@@ -547,6 +716,8 @@ const s = StyleSheet.create({
   sendBtnTxt:    { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   occupeMsg:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgAlt, borderRadius: 12, paddingVertical: 13, marginBottom: 10, paddingHorizontal: 12 },
   occupeMsgTxt:  { fontSize: 13, color: C.muted, fontWeight: '600' },
+  profileBtn:    { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border, borderRadius: 50, paddingVertical: 13 },
+  profileBtnTxt: { fontSize: 14, fontWeight: '700', color: C.text },
   closeSheet:    { alignItems: 'center', paddingTop: 6 },
   closeSheetTxt: { fontSize: 14, color: C.muted, fontWeight: '600' },
 

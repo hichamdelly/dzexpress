@@ -156,7 +156,40 @@ export function initDatabase() {
     `ALTER TABLE demandes ADD COLUMN simule_dispatch_at TEXT`,
     `ALTER TABLE users ADD COLUMN heure_mise_en_ligne TEXT`,
     `ALTER TABLE demandes ADD COLUMN heure_souhaitee TEXT`,
+    // Suivi GPS temps réel (voir src/lib/tracking.js) — position live du
+    // transporteur pendant que statut = 'en_route'.
+    `ALTER TABLE demandes ADD COLUMN transporteur_lat REAL`,
+    `ALTER TABLE demandes ADD COLUMN transporteur_lng REAL`,
+    `ALTER TABLE demandes ADD COLUMN position_updated_at TEXT`,
+    // Paiement (voir app/paiement/[id].jsx)
+    `ALTER TABLE demandes ADD COLUMN mode_paiement TEXT DEFAULT 'cash'`,
+    `ALTER TABLE demandes ADD COLUMN statut_paiement TEXT DEFAULT 'en_attente'`,
+    `ALTER TABLE demandes ADD COLUMN reference_paiement TEXT`,
+    // Infos bancaires transporteur (BaridiMob) — voir app/(tabs)/profil.jsx
+    `ALTER TABLE users ADD COLUMN ccp_numero TEXT`,
+    `ALTER TABLE users ADD COLUMN ccp_cle TEXT`,
+    // Horodatage du passage à "en_route" — ancre le trajet simulé (voir
+    // src/lib/simulationTrajet.js) sur un temps partagé plutôt que sur un
+    // compteur local à chaque écran, pour que la position affichée soit
+    // cohérente entre app/(tabs)/index.jsx et app/suivi-live/[id].jsx.
+    `ALTER TABLE demandes ADD COLUMN en_route_at TEXT`,
   ];
+  // Table cache des coordonnées GPS précises par commune (voir
+  // src/utils/distance.js) — alimentée en tâche de fond via géocodage,
+  // pour affiner les distances au-delà de l'approximation par wilaya.
+  try {
+    d.execSync(`
+      CREATE TABLE IF NOT EXISTS commune_coords (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        commune    TEXT NOT NULL,
+        wilaya     TEXT NOT NULL,
+        latitude   REAL NOT NULL,
+        longitude  REAL NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(commune, wilaya)
+      );
+    `);
+  } catch (_) {}
   // Table signalements (aide & support)
   try {
     d.execSync(`
@@ -282,6 +315,14 @@ export const usersDB = {
       [nom, telephone, wilaya, vehicule, disponible, id]
     );
   },
+
+  // Infos bancaires transporteur (BaridiMob) — voir app/(tabs)/profil.jsx
+  // et app/paiement/[id].jsx
+  updateCCP: (id, { ccp_numero, ccp_cle }) =>
+    getDB().runSync(
+      `UPDATE users SET ccp_numero=?, ccp_cle=? WHERE id=?`,
+      [ccp_numero || null, ccp_cle || null, id]
+    ),
 
   getAnnulations: (id) =>
     getDB().getFirstSync(
@@ -444,9 +485,29 @@ export const demandesDB = {
         : `UPDATE demandes SET statut=?, transporteur_id=? WHERE id=?`;
       getDB().runSync(sql, [statut, transporteur_id, id]);
     } else {
-      getDB().runSync(`UPDATE demandes SET statut=? WHERE id=?`, [statut, id]);
+      const sql = statut === 'en_route'
+        ? `UPDATE demandes SET statut=?, en_route_at=datetime('now') WHERE id=?`
+        : `UPDATE demandes SET statut=? WHERE id=?`;
+      getDB().runSync(sql, [statut, id]);
     }
   },
+
+  // Position GPS live du transporteur (suivi temps réel, voir src/lib/tracking.js)
+  updatePosition: (id, latitude, longitude) =>
+    getDB().runSync(
+      `UPDATE demandes SET transporteur_lat=?, transporteur_lng=?, position_updated_at=datetime('now') WHERE id=?`,
+      [latitude, longitude, id]
+    ),
+
+  // Paiement (voir app/paiement/[id].jsx et app/course/[id].jsx)
+  setModePaiement: (id, mode) =>
+    getDB().runSync(`UPDATE demandes SET mode_paiement=? WHERE id=?`, [mode, id]),
+
+  confirmerPaiement: (id, { mode, reference = null } = {}) =>
+    getDB().runSync(
+      `UPDATE demandes SET statut_paiement='confirme', mode_paiement=COALESCE(?, mode_paiement), reference_paiement=? WHERE id=?`,
+      [mode || null, reference, id]
+    ),
 
   // Remet la demande en attente quand le transporteur annule
   annulerParTransporteur: (id) =>
@@ -704,6 +765,16 @@ export const gainsDB = {
     };
   },
 
+  // Répartition prix/commission déjà enregistrée pour une course donnée
+  // (voir app/paiement/[id].jsx) — écrite une fois à la livraison
+  // (app/course/[id].jsx, confirmLivraison), source de vérité plutôt
+  // que de recalculer via partTransporteur().
+  getByDemande: (demandeId) =>
+    getDB().getFirstSync(
+      `SELECT * FROM gains_transporteur WHERE demande_id = ? ORDER BY id DESC LIMIT 1`,
+      [demandeId]
+    ) || null,
+
   getStatToday: (userId) => {
     const today = new Date().toISOString().split('T')[0];
     const d = getDB();
@@ -932,4 +1003,28 @@ export const annulationsDB = {
        AND strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')`,
       [userId]
     )?.n ?? 0,
+};
+
+// ── CACHE COORDONNÉES COMMUNE (voir src/utils/distance.js) ────
+export const communeCoordsDB = {
+  get: (commune, wilaya) => {
+    try {
+      return getDB().getFirstSync(
+        `SELECT latitude, longitude FROM commune_coords WHERE commune = ? AND wilaya = ?`,
+        [commune, wilaya]
+      ) || null;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  set: (commune, wilaya, latitude, longitude) => {
+    try {
+      getDB().runSync(
+        `INSERT OR REPLACE INTO commune_coords (commune, wilaya, latitude, longitude)
+         VALUES (?, ?, ?, ?)`,
+        [commune, wilaya, latitude, longitude]
+      );
+    } catch (_) {}
+  },
 };

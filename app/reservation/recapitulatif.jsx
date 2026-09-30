@@ -11,12 +11,28 @@ import { useApp } from '../../src/context/AppContext';
 import { demandesDB, notifDB, usersDB } from '../../src/db/database';
 import { NT } from '../../src/lib/notifications';
 import { calculerPrix, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
-import { getDistanceKm } from '../../src/utils/wilayas';
+import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
 
 const TYPE_LABELS = {
   meubles: 'Meubles', electromenager: 'Électroménager',
   cartons: 'Cartons', alimentation: 'Alimentation',
   materiaux: 'Matériaux BTP', vehicule: 'Véhicule', autre: 'Autre',
+};
+
+// Labels des sous-catégories (voir app/reservation/quantite.jsx — mêmes
+// clés, dupliquées ici par convention de ce projet pour l'affichage du
+// récapitulatif, voir CLAUDE.md : constantes répétées par écran).
+const SOUS_CATEGORIE_LABELS = {
+  lit: 'Lit', canape: 'Canapé', armoire: 'Armoire', table: 'Table & Chaises',
+  salon: 'Salon complet', appart: "Tout l'appart",
+  frigo: 'Réfrigérateur', machine: 'Machine à laver', clim: 'Climatiseur',
+  tv: 'TV / Écran', plusieurs: 'Plusieurs gros appareils',
+  petit: '< 10 cartons', moyen: '10 – 30 cartons', grand: '> 30 cartons',
+  fruits_legumes: 'Fruits & Légumes', epicerie: 'Produits alimentaires',
+  vrac_alim: 'Grande quantité', surgeles: 'Surgelés / Réfrigérés',
+  sable: 'Sable / Gravier', briques: 'Briques / Parpaings', fer: 'Fer à béton',
+  carrelage: 'Carrelage', autre_btp: 'Autre BTP',
+  voiture: 'Voiture', moto: 'Moto / Scooter', camion_l: 'Camion léger',
 };
 
 const C = {
@@ -53,8 +69,27 @@ export default function Recapitulatif() {
   const [showHeure, setShowHeure] = useState(false);
   const [saving,    setSaving]    = useState(false);
 
-  const km    = getDistanceKm(ctx.departure, ctx.arrival);
-  const opts  = ctx.options || {};
+  const km         = getDistanceKm(ctx.departure, ctx.arrival);
+  const opts       = ctx.options || {};
+  const categories = ctx.categories || [];
+  const optCats    = ctx.optionsCategories || {};
+
+  // Une ligne par catégorie sélectionnée, avec sa sous-catégorie si choisie
+  // — "📦 Meubles — Salon complet".
+  const marchandiseLignes = categories.map(cat => ({
+    cat,
+    label:     TYPE_LABELS[cat] || cat,
+    sousLabel: optCats[cat] ? (SOUS_CATEGORIE_LABELS[optCats[cat]] || optCats[cat]) : null,
+  }));
+
+  // Les colonnes DB (type_marchandise / sous_categorie) restent des chaînes
+  // simples (pas de migration de schéma pour ce fix) — jointes ici pour
+  // rester lisibles dans les écrans qui les affichent déjà telles quelles.
+  const typeMarchandiseDB = categories.join(',');
+  const sousCategorieDB = marchandiseLignes
+    .filter(l => l.sousLabel)
+    .map(l => `${l.label}: ${l.sousLabel}`)
+    .join(', ');
   const estim = km && ctx.vehicule
     ? calculerPrix(km, ctx.vehicule, { ...opts, nbActives: 0 })
     : null;
@@ -87,7 +122,7 @@ export default function Recapitulatif() {
   const handleReserver = async () => {
     if (!ctx.departure) return Alert.alert('Incomplet', 'Ville de départ manquante. Retourne à l\'étape 1.');
     if (!ctx.arrival)   return Alert.alert('Incomplet', "Ville d'arrivée manquante. Retourne à l'étape 1.");
-    if (!ctx.category)  return Alert.alert('Incomplet', 'Type de marchandise manquant. Retourne à l\'étape 2.');
+    if (categories.length === 0) return Alert.alert('Incomplet', 'Type de marchandise manquant. Retourne à l\'étape 2.');
     if (!ctx.vehicule)  return Alert.alert('Incomplet', 'Véhicule non sélectionné. Retourne à l\'étape 4.');
 
     if (mode === 'instantane') {
@@ -96,10 +131,10 @@ export default function Recapitulatif() {
         params: {
           depart:               ctx.departure,
           arrivee:              ctx.arrival,
-          type:                 ctx.category,
+          type:                 typeMarchandiseDB,
           poids:                ctx.quantite || '',
           desc:                 ctx.description || '',
-          sous_categorie:       ctx.sousCategorie || '',
+          sous_categorie:       sousCategorieDB,
           vehicule_recommande:  ctx.vehicule || '',
         },
       });
@@ -119,7 +154,7 @@ export default function Recapitulatif() {
         expediteur_id:            user.id,
         ville_depart:             ctx.departure,
         ville_arrivee:            ctx.arrival,
-        type_marchandise:         ctx.category,
+        type_marchandise:         typeMarchandiseDB,
         poids:                    ctx.quantite || null,
         description:              ctx.description || null,
         type_demande:             'planifie',
@@ -129,14 +164,14 @@ export default function Recapitulatif() {
         prix_estime:              estim?.min ?? null,
         surge_coefficient:        estim?.surgeCoefficient ?? null,
         options_supplementaires:  JSON.stringify(opts),
-        sous_categorie:           ctx.sousCategorie || null,
+        sous_categorie:           sousCategorieDB || null,
         vehicule_recommande:      ctx.vehicule || null,
       });
 
       // Notification riche pour les transporteurs
       const vehLbl = TARIFS_BASE[ctx.vehicule]?.label || ctx.vehicule || '';
-      const typeLbl = TYPE_LABELS[ctx.category] || ctx.category;
-      const sousLbl = ctx.sousCategorie ? ` — ${ctx.sousCategorie}` : '';
+      const typeLbl = marchandiseLignes.map(l => l.label).join(', ') || typeMarchandiseDB;
+      const sousLbl = sousCategorieDB ? ` — ${sousCategorieDB}` : '';
       const quandLbl = heureStr ? `${fmt(date)} à ${heureStr}` : fmt(date);
       const notifMsg =
         `🚛 Nouvelle course disponible\n` +
@@ -189,7 +224,21 @@ export default function Recapitulatif() {
           {km != null && (
             <SummaryRow icon="navigate-outline"  label="Distance"    value={`${km} km`} />
           )}
-          <SummaryRow icon="cube-outline"        label="Marchandise" value={TYPE_LABELS[ctx.category]} />
+          {marchandiseLignes.length > 0 && (
+            <View style={sr.row}>
+              <View style={sr.iconBox}>
+                <Ionicons name="cube-outline" size={15} color={C.muted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={sr.label}>Marchandise</Text>
+                {marchandiseLignes.map(l => (
+                  <Text key={l.cat} style={sr.value}>
+                    📦 {l.label}{l.sousLabel ? ` — ${l.sousLabel}` : ''}
+                  </Text>
+                ))}
+              </View>
+            </View>
+          )}
           <SummaryRow icon="car-sport-outline"   label="Véhicule"    value={TARIFS_BASE[ctx.vehicule]?.label} />
           {ctx.quantite    && <SummaryRow icon="scale-outline"       label="Poids"       value={ctx.quantite} />}
           <SummaryRow       icon="options-outline" label="Options"   value={optionsLabel()} />

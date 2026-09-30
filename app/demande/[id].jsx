@@ -8,7 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { demandesDB, offresDB, notifDB, usersDB, annulationsDB, messagesDB } from '../../src/db/database';
 import { fmtPrix, calculerPrix } from '../../src/utils/pricing';
 import { useApp, localNotif } from '../../src/context/AppContext';
-import { getDistanceKm, fmtKm } from '../../src/utils/wilayas';
+import { NT } from '../../src/lib/notifications';
+import { fmtKm } from '../../src/utils/wilayas';
+import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
 
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
@@ -55,6 +57,7 @@ export default function DetailDemandeScreen() {
   const [msgUnread, setMsgUnread]         = useState(0);
   const [timeLeft, setTimeLeft]           = useState(null);
   const timerRef                          = useRef(null);
+  const timerAlertRef                     = useRef(false);
 
   const fetch = useCallback(() => {
     try {
@@ -81,6 +84,7 @@ export default function DetailDemandeScreen() {
 
   useEffect(() => {
     clearInterval(timerRef.current);
+    timerAlertRef.current = false;
     if (!demande || demande.statut !== 'acceptee' || !demande.accepted_at) { setTimeLeft(null); return; }
     const GRACE = 5 * 60;
     const acceptedMs = new Date(demande.accepted_at.replace(' ', 'T') + 'Z').getTime();
@@ -89,6 +93,13 @@ export default function DetailDemandeScreen() {
     timerRef.current = setInterval(tick, 1000);
     return () => clearInterval(timerRef.current);
   }, [demande?.accepted_at, demande?.statut]);
+
+  useEffect(() => {
+    if (timeLeft === 120 && !timerAlertRef.current && user) {
+      timerAlertRef.current = true;
+      localNotif(user.id, 'Plus que 2 min pour annuler gratuitement !', NT.TIMER_ANNULATION, { route: `/demande/${id}` });
+    }
+  }, [timeLeft]);
 
   const annuler = () => {
     const isGratuite = demande.statut === 'acceptee' && timeLeft !== null && timeLeft > 0;
@@ -103,7 +114,7 @@ export default function DetailDemandeScreen() {
           demandesDB.updateStatut(parseInt(id), 'annulee');
           annulationsDB.create({ demande_id: parseInt(id), user_id: user.id, role: 'expediteur', motif: null, gratuite: isGratuite ? 1 : 0 });
           if (demande.transporteur_id)
-            notifDB.create(demande.transporteur_id, `L'expéditeur a annulé la demande ${demande.ville_depart} → ${demande.ville_arrivee}.`);
+            notifDB.create(demande.transporteur_id, `L'expéditeur a annulé la demande ${demande.ville_depart} → ${demande.ville_arrivee}.`, NT.COURSE_ANNULEE, { route: `/course/${id}` });
           fetch();
         }},
       ]
@@ -150,6 +161,22 @@ export default function DetailDemandeScreen() {
             <Text style={s.statusDesc}>{st.desc}</Text>
           </View>
         </View>
+
+        {/* Paiement — dès que la course est livrée */}
+        {demande.statut === 'livree' && (
+          <TouchableOpacity style={s.paiementCard} onPress={() => router.push(`/paiement/${id}`)} activeOpacity={0.88}>
+            <View style={[s.paiementIcon, demande.statut_paiement === 'confirme' && { backgroundColor: C.successLight }]}>
+              <Ionicons name="card-outline" size={20} color={demande.statut_paiement === 'confirme' ? C.success : C.accent} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={s.paiementTitle}>Paiement</Text>
+              <Text style={[s.paiementSub, demande.statut_paiement === 'confirme' && { color: C.success }]}>
+                {demande.statut_paiement === 'confirme' ? 'Confirmé' : 'En attente de confirmation'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={C.muted} />
+          </TouchableOpacity>
+        )}
 
         {/* Timeline */}
         {demande.statut !== 'annulee' && (
@@ -267,7 +294,7 @@ export default function DetailDemandeScreen() {
         </View>
 
         {/* Bouton contact transporteur */}
-        {['acceptee', 'en_cours', 'livree'].includes(demande.statut) && (
+        {['acceptee', 'en_cours'].includes(demande.statut) && (
           <TouchableOpacity style={cs.contactBtn} onPress={() => router.push(`/chat/${demande.id}`)}>
             <Ionicons name="chatbubble-ellipses" size={18} color={C.success} style={{ marginRight: 8 }} />
             <Text style={cs.contactBtnTxt}>
@@ -277,6 +304,13 @@ export default function DetailDemandeScreen() {
               <View style={cs.badge}><Text style={cs.badgeTxt}>{msgUnread > 9 ? '9+' : msgUnread}</Text></View>
             )}
           </TouchableOpacity>
+        )}
+
+        {demande.statut === 'en_attente' && (
+          <View style={cs.infoBar}>
+            <Ionicons name="lock-closed-outline" size={13} color={C.muted} style={{ marginRight: 7 }} />
+            <Text style={cs.infoBarTxt}>Les coordonnées du transporteur seront disponibles après acceptation</Text>
+          </View>
         )}
 
         {/* Transporteur assigné */}
@@ -300,7 +334,7 @@ export default function DetailDemandeScreen() {
                 <AnnulationsBadge count={transAnnulations} />
               </View>
             </View>
-            {demande.transporteur_tel && (
+            {demande.transporteur_tel && ['acceptee', 'en_cours'].includes(demande.statut) && (
               <TouchableOpacity style={s.callBtn}
                 onPress={() => Alert.alert('Appel', `Numéro : ${demande.transporteur_tel}`)}>
                 <Ionicons name="call-outline" size={16} color={C.success} style={{ marginRight: 8 }} />
@@ -395,8 +429,8 @@ export default function DetailDemandeScreen() {
                                 const prixFinal = offre.contre_prix || offre.prix_propose || null;
                                 offresDB.accepter(offre.id, demande.id, offre.transporteur_id);
                                 if (prixFinal) demandesDB.setPrixFinal(demande.id, prixFinal);
-                                notifDB.create(offre.transporteur_id, `Ton offre pour ${demande.ville_depart} → ${demande.ville_arrivee} a été acceptée !`);
-                                localNotif(user.id, `Tu as accepté l'offre de ${offre.transporteur_nom} !`);
+                                notifDB.create(offre.transporteur_id, `Ton offre pour ${demande.ville_depart} → ${demande.ville_arrivee} a été acceptée !`, NT.COURSE_ACCEPTEE, { route: `/course/${demande.id}` });
+                                localNotif(user.id, `Tu as accepté l'offre de ${offre.transporteur_nom} !`, NT.COURSE_ACCEPTEE, { route: `/demande/${id}` });
                                 fetch();
                               } catch (e) { Alert.alert('Erreur', e.message); }
                               finally { setAccepting(null); }
@@ -431,7 +465,7 @@ export default function DetailDemandeScreen() {
                                   const prix = parseFloat(contrePrix);
                                   if (!prix || prix <= 0) return;
                                   offresDB.contreProposer(offre.id, prix, 'expediteur');
-                                  notifDB.create(offre.transporteur_id, `${user.nom} te fait une contre-proposition : ${fmtPrix(prix)} pour ${demande.ville_depart} → ${demande.ville_arrivee}`);
+                                  notifDB.create(offre.transporteur_id, `${user.nom} te fait une contre-proposition : ${fmtPrix(prix)} pour ${demande.ville_depart} → ${demande.ville_arrivee}`, NT.CONTRE_PROPOSITION, { route: `/course/${demande.id}` });
                                   setContreForm(null); setContrePrix(''); fetch();
                                 }}
                               >
@@ -472,10 +506,12 @@ export default function DetailDemandeScreen() {
                   <Ionicons name="star" size={13} color="#F59E0B" style={{ marginRight: 4 }} />
                   <Text style={{ color: C.muted }}>{t.rating} · {t.vehicule_label}</Text>
                 </View>
-                <View style={s.callBtn}>
-                  <Ionicons name="call-outline" size={16} color={C.success} style={{ marginRight: 8 }} />
-                  <Text style={s.callBtnTxt}>{t.telephone}</Text>
-                </View>
+                {['acceptee', 'en_cours'].includes(demande.statut) && (
+                  <View style={s.callBtn}>
+                    <Ionicons name="call-outline" size={16} color={C.success} style={{ marginRight: 8 }} />
+                    <Text style={s.callBtnTxt}>{t.telephone}</Text>
+                  </View>
+                )}
               </View>
             );
           } catch { return null; }
@@ -572,6 +608,11 @@ const s = StyleSheet.create({
   statusTitle: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
   statusDesc:  { fontSize: 13, color: C.muted, lineHeight: 18 },
 
+  paiementCard:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, padding: 14 },
+  paiementIcon:  { width: 40, height: 40, borderRadius: 20, backgroundColor: C.accentLight, alignItems: 'center', justifyContent: 'center' },
+  paiementTitle: { fontSize: 14, fontWeight: '800', color: C.text },
+  paiementSub:   { fontSize: 12, color: C.muted, marginTop: 2 },
+
   timeline:    { gap: 0 },
   timelineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   timelineLeft:{ alignItems: 'center', width: 26 },
@@ -613,6 +654,8 @@ const cs = StyleSheet.create({
   contactBtnTxt: { fontSize: 15, fontWeight: '800', color: C.success },
   badge:         { backgroundColor: C.error, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, marginLeft: 6 },
   badgeTxt:      { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
+  infoBar:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgAlt, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: C.border },
+  infoBarTxt:    { fontSize: 13, color: C.muted, flex: 1, lineHeight: 18 },
 });
 
 const offreStyles = StyleSheet.create({

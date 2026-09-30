@@ -47,15 +47,14 @@ function randomVehicule() {
 }
 
 // ── Distribution réaliste des notes ──────────────────────────
-// La majorité est entre 4.0 et 4.8 (comme sur Uber/Lyft)
+// Bornée à 3.5–5 (démo mode Maintenant) — la majorité entre 4.0 et 4.8
 function randomRating() {
   const r = Math.random();
-  if (r < 0.04) return parseFloat(rnd(2.8, 3.3).toFixed(1)); // 4%  bas
-  if (r < 0.12) return parseFloat(rnd(3.4, 3.9).toFixed(1)); // 8%  moyen
-  if (r < 0.38) return parseFloat(rnd(4.0, 4.3).toFixed(1)); // 26% bien
-  if (r < 0.70) return parseFloat(rnd(4.3, 4.7).toFixed(1)); // 32% très bien
-  if (r < 0.90) return parseFloat(rnd(4.7, 4.9).toFixed(1)); // 20% excellent
-  return parseFloat(rnd(4.9, 5.0).toFixed(1));                // 10% parfait
+  if (r < 0.10) return parseFloat(rnd(3.5, 3.9).toFixed(1)); // 10% moyen
+  if (r < 0.35) return parseFloat(rnd(4.0, 4.3).toFixed(1)); // 25% bien
+  if (r < 0.65) return parseFloat(rnd(4.3, 4.7).toFixed(1)); // 30% très bien
+  if (r < 0.85) return parseFloat(rnd(4.7, 4.9).toFixed(1)); // 20% excellent
+  return parseFloat(rnd(4.9, 5.0).toFixed(1));                // 15% parfait
 }
 
 // Nombre de courses corrélé à la note (les bons ont plus de courses)
@@ -76,21 +75,18 @@ export function genererTransporteurs(centerLat, centerLng, count = 8, routeKm = 
   const km  = Math.max(5, routeKm || 50);
   const now = new Date();
 
-  // On garantit au moins 2 transporteurs disponibles
-  const disponibilites = Array.from({ length: count }, () => Math.random() > 0.28);
-  const nbDispo = disponibilites.filter(Boolean).length;
-  if (nbDispo < 2) { disponibilites[0] = true; disponibilites[1] = true; }
-
   // Pool de noms sans répétition (shuffled)
   const nomsShuffled = [...NOMS].sort(() => Math.random() - 0.5);
 
   return Array.from({ length: count }, (_, i) => {
     const angle   = (i / count) * 2 * Math.PI + rnd(-0.4, 0.4);
-    const radius  = rnd(0.006, 0.044);       // ~0.7 km à ~5 km
+    const radius  = rnd(0.018, 0.135);       // ~2 km à ~15 km (1° ≈ 111 km)
     const veh     = randomVehicule();
     const rating  = randomRating();
     const distM   = Math.round(radius * 111_000);
-    const dispo   = disponibilites[i];
+    // Tous disponibles à la génération (démo mode Maintenant) — un
+    // transporteur peut ensuite passer occupé après un refus simulé.
+    const dispo   = true;
 
     // Prix via moteur dynamique ± variation ±12 %
     const result      = calculerPrix(km, veh, { nbActives: 0, date: now });

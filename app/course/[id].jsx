@@ -13,7 +13,9 @@ import { demandesDB, offresDB, notifDB, usersDB, annulationsDB, gainsDB, message
 import { fmtPrix, partTransporteur } from '../../src/utils/pricing';
 import { useApp, localNotif } from '../../src/context/AppContext';
 import { NT } from '../../src/lib/notifications';
-import { getDistanceKm, fmtKm } from '../../src/utils/wilayas';
+import { fmtKm } from '../../src/utils/wilayas';
+import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
+import { demarrerTrackingGPS, arreterTrackingGPS, demandeEnCoursDeSuivi } from '../../src/lib/tracking';
 
 const C = {
   primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
@@ -195,6 +197,9 @@ export default function DetailCourseScreen() {
   const [msgUnread, setMsgUnread]             = useState(0);
 
   const [showStartModal, setShowStartModal] = useState(false);
+  const [gpsActif, setGpsActif]             = useState(false);
+  const [showCashModal, setShowCashModal]   = useState(false);
+  const [confirmingCash, setConfirmingCash] = useState(false);
   const pulse = useRef(new Animated.Value(1)).current;
 
   const requestMediaPermission = async (type) => {
@@ -227,6 +232,8 @@ export default function DetailCourseScreen() {
     setConfirming(true);
     try {
       demandesDB.updateStatut(parseInt(id), 'livree');
+      arreterTrackingGPS();
+      setGpsActif(false);
       const prixRef = demande.prix_final || demande.prix_estime || 0;
       if (prixRef > 0) {
         const part = partTransporteur(prixRef);
@@ -242,6 +249,19 @@ export default function DetailCourseScreen() {
     finally { setConfirming(false); }
   };
 
+  const confirmerReceptionCash = () => {
+    setConfirmingCash(true);
+    try {
+      demandesDB.confirmerPaiement(parseInt(id), { mode: 'cash' });
+      if (demande.expediteur_id) {
+        notifDB.create(demande.expediteur_id, `💵 ${user.nom} a confirmé avoir reçu le paiement en espèces.`, NT.PAIEMENT_CONFIRME, { route: `/paiement/${id}` });
+      }
+      setShowCashModal(false);
+      fetch();
+    } catch (e) { Alert.alert('Erreur', e.message); }
+    finally { setConfirmingCash(false); }
+  };
+
   const fetch = useCallback(() => {
     try {
       const d = demandesDB.getById(parseInt(id));
@@ -249,6 +269,7 @@ export default function DetailCourseScreen() {
       if (user && d?.type_demande === 'planifie') setMyOffer(offresDB.getMyOffer(parseInt(id), user.id));
       if (user?.type === 'transporteur') setSuspension(usersDB.isSuspended(user.id));
       setMsgUnread(messagesDB.countUnreadForDemande(parseInt(id), user?.id || 0));
+      setGpsActif(demandeEnCoursDeSuivi() === parseInt(id));
     } catch (e) { console.log(e.message); }
     finally { setLoading(false); }
   }, [id, user]);
@@ -288,8 +309,10 @@ export default function DetailCourseScreen() {
     try {
       if (navApp) openNavigation(navApp);
       demandesDB.updateStatut(parseInt(id), 'en_route');
+      const started = await demarrerTrackingGPS(parseInt(id));
+      setGpsActif(started);
       if (demande.expediteur_id) {
-        notifDB.create(demande.expediteur_id, `🚛 Votre transporteur a démarré la course ! ${user.nom} est en route vers ${demande.ville_arrivee}.`, NT.TRANSPORTEUR_ENROUTE, { route: `/demande/${id}` });
+        notifDB.create(demande.expediteur_id, `🚛 Votre transporteur a démarré la course ! ${user.nom} est en route vers ${demande.ville_arrivee}.`, NT.TRANSPORTEUR_ENROUTE, { route: `/suivi-live/${id}` });
       }
       setShowStartModal(false);
       fetch();
@@ -322,6 +345,8 @@ export default function DetailCourseScreen() {
     setActing(true);
     try {
       demandesDB.annulerParTransporteur(parseInt(id));
+      arreterTrackingGPS();
+      setGpsActif(false);
       usersDB.incrementAnnulations(user.id);
       annulationsDB.create({ demande_id: parseInt(id), user_id: user.id, role: 'transporteur', motif: selectedReason, gratuite: 0 });
       const suspDate = usersDB.checkAndSuspend(user.id);
@@ -388,6 +413,11 @@ export default function DetailCourseScreen() {
                 </View>
               )}
             </View>
+            {demande.statut === 'en_route' && (
+              <Text style={[s.gpsStatutTxt, { color: gpsActif ? C.success : C.error }]}>
+                {gpsActif ? 'GPS actif ✅ — position partagée avec l’expéditeur' : 'GPS inactif ❌ — vérifie la permission de localisation'}
+              </Text>
+            )}
             <LocationMap user={user} status={demande.statut} />
           </View>
         )}
@@ -678,8 +708,10 @@ export default function DetailCourseScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Annuler */}
-        {['acceptee', 'en_route'].includes(demande.statut) && isMyOrder && (
+        {/* Annuler — uniquement avant le démarrage. Une fois "en_route",
+            l'annulation est bloquée (voir l'avertissement du modal de
+            démarrage : "vous ne pourrez plus l'annuler"). */}
+        {demande.statut === 'acceptee' && isMyOrder && (
           <TouchableOpacity style={[s.cancelCourseBtn, acting && { opacity: 0.65 }]} onPress={() => { setSelectedReason(null); setShowCancelModal(true); }} disabled={acting}>
             <Ionicons name="close-circle-outline" size={18} color={C.error} style={{ marginRight: 8 }} />
             <Text style={s.cancelCourseTxt}>Annuler cette course</Text>
@@ -692,6 +724,22 @@ export default function DetailCourseScreen() {
             <Ionicons name="checkmark-circle" size={48} color={C.success} style={{ marginBottom: 10 }} />
             <Text style={s.doneTxt}>Course terminée</Text>
             <Text style={s.doneSub}>Marchandise livrée à {demande.ville_arrivee}.</Text>
+          </View>
+        )}
+
+        {/* Confirmation réception paiement cash */}
+        {isMyOrder && demande.statut === 'livree'
+          && (demande.mode_paiement || 'cash') === 'cash'
+          && demande.statut_paiement !== 'confirme' && (
+          <TouchableOpacity style={s.cashBtn} onPress={() => setShowCashModal(true)} activeOpacity={0.88}>
+            <Text style={{ fontSize: 18, marginRight: 8 }}>💵</Text>
+            <Text style={s.cashBtnTxt}>Confirmer réception paiement cash</Text>
+          </TouchableOpacity>
+        )}
+        {isMyOrder && demande.statut_paiement === 'confirme' && (
+          <View style={s.cashConfirmedBar}>
+            <Ionicons name="checkmark-circle" size={16} color={C.success} style={{ marginRight: 8 }} />
+            <Text style={s.cashConfirmedTxt}>Paiement confirmé</Text>
           </View>
         )}
 
@@ -785,6 +833,14 @@ export default function DetailCourseScreen() {
               <Text style={{ fontWeight: '800', color: C.text }}>{demande.ville_arrivee}</Text>
             </Text>
 
+            <View style={sm.warningBox}>
+              <Ionicons name="warning" size={18} color={C.warning} style={{ marginRight: 10 }} />
+              <Text style={sm.warningTxt}>
+                Une fois la course démarrée, vous ne pourrez plus l&rsquo;annuler.{' '}
+                Assurez-vous d&rsquo;être prêt et à la bonne adresse.
+              </Text>
+            </View>
+
             <Text style={sm.navLabel}>Naviguer vers la destination</Text>
 
             {/* Google Maps */}
@@ -868,6 +924,32 @@ export default function DetailCourseScreen() {
         </View>
       </Modal>
 
+      {/* ── Modal confirmation réception cash ── */}
+      <Modal visible={showCashModal} transparent animationType="slide" onRequestClose={() => setShowCashModal(false)}>
+        <View style={cm.overlay}>
+          <View style={cm.sheet}>
+            <View style={cm.handle} />
+            <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>💵</Text>
+            <Text style={cm.title}>Paiement en espèces</Text>
+            <Text style={cm.sub}>
+              {"Avez-vous reçu "}
+              <Text style={{ fontWeight: '900', color: C.text }}>{fmtPrix(demande.prix_final || demande.prix_estime || 0)}</Text>
+              {" en espèces de l'expéditeur ?"}
+            </Text>
+            <TouchableOpacity
+              style={[cm.confirmBtn, { backgroundColor: C.success }, confirmingCash && { opacity: 0.7 }]}
+              onPress={confirmerReceptionCash}
+              disabled={confirmingCash}
+            >
+              {confirmingCash ? <ActivityIndicator color="#FFFFFF" /> : <Text style={cm.confirmTxt}>Oui, j&rsquo;ai reçu le paiement</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={cm.abandonBtn} onPress={() => setShowCashModal(false)} disabled={confirmingCash}>
+              <Text style={cm.abandonTxt}>Pas encore</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Modal photo de livraison ── */}
       <Modal visible={showPhotoModal} transparent animationType="slide" onRequestClose={() => setShowPhotoModal(false)}>
         <View style={pm.overlay}>
@@ -935,6 +1017,7 @@ const s = StyleSheet.create({
   liveChip:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.errorLight, borderRadius: 50, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#FCA5A5' },
   liveDot:      { width: 7, height: 7, borderRadius: 4, backgroundColor: C.error },
   liveTxt:      { fontSize: 11, fontWeight: '700', color: C.error },
+  gpsStatutTxt: { fontSize: 12, fontWeight: '700', marginTop: 6 },
 
   statusCard:   { flexDirection: 'row', alignItems: 'center', borderRadius: 12, padding: 16, borderWidth: 1.5 },
   statusIcon:   { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 14 },
@@ -981,6 +1064,11 @@ const s = StyleSheet.create({
   doneCard:    { backgroundColor: C.successLight, borderRadius: 12, padding: 24, alignItems: 'center', borderWidth: 1.5, borderColor: '#6EE7B7' },
   doneTxt:     { fontSize: 20, fontWeight: '800', color: C.success, marginBottom: 4 },
   doneSub:     { fontSize: 13, color: C.success },
+
+  cashBtn:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.success, borderRadius: 50, paddingVertical: 16 },
+  cashBtnTxt:        { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  cashConfirmedBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.successLight, borderRadius: 12, paddingVertical: 12, borderWidth: 1.5, borderColor: '#6EE7B7' },
+  cashConfirmedTxt:  { color: C.success, fontSize: 13, fontWeight: '700' },
 
   takenCard:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgAlt, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: C.border },
   takenTxt:    { fontSize: 13, color: C.muted, fontWeight: '600', flex: 1 },
@@ -1039,6 +1127,8 @@ const sm = StyleSheet.create({
   rocketBadge:  { width: 64, height: 64, borderRadius: 32, backgroundColor: C.successLight, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 14, borderWidth: 1.5, borderColor: '#6EE7B7' },
   title:        { fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
   sub:          { fontSize: 13, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 22 },
+  warningBox:   { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.warningLight, borderRadius: 12, borderWidth: 1.5, borderColor: '#FDE68A', padding: 14, marginBottom: 22 },
+  warningTxt:   { flex: 1, fontSize: 12.5, color: '#92400E', fontWeight: '600', lineHeight: 18 },
   navLabel:     { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
 
   navBtn:       { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10, borderWidth: 1.5, gap: 12 },
