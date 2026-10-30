@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const C = {
   bg: '#F8FAFC', card: '#FFFFFF', primary: '#1A56DB',
-  accent: '#F97316', success: '#16A34A', error: '#DC2626', warning: '#D97706',
+  accent: '#0F4D2E', success: '#16A34A', error: '#DC2626', warning: '#D97706',
   text: '#0F172A', muted: '#64748B', border: '#E2E8F0',
 };
 
@@ -58,7 +58,7 @@ export default function AdminUtilisateurs() {
   };
 
   const handleValider = (u) => {
-    Alert.alert(`Valider ${u.nom} ?`, 'Ce transporteur sera validé et pourra recevoir des courses.', [
+    Alert.alert(`Valider ${u.nom} ?`, 'Ce chauffeur sera validé et pourra recevoir des courses.', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Valider', style: 'default',
@@ -101,7 +101,7 @@ export default function AdminUtilisateurs() {
         },
       ]);
     } else {
-      Alert.alert(`Suspendre ${u.nom} ?`, 'Ce transporteur sera suspendu 7 jours.', [
+      Alert.alert(`Suspendre ${u.nom} ?`, 'Ce chauffeur sera suspendu 7 jours.', [
         { text: 'Annuler', style: 'cancel' },
         {
           text: 'Suspendre', style: 'destructive',
@@ -145,7 +145,7 @@ export default function AdminUtilisateurs() {
             <View style={s.cardBadges}>
               <View style={[s.typeBadge, u.type === 'expediteur' ? s.expBadge : s.transBadge]}>
                 <Text style={[s.typeBadgeTxt, u.type === 'expediteur' ? { color: C.accent } : { color: C.primary }]}>
-                  {u.type === 'expediteur' ? 'Expéditeur' : 'Transporteur'}
+                  {u.type === 'expediteur' ? 'Expéditeur' : 'Chauffeur'}
                 </Text>
               </View>
               {isSuspended && (
@@ -248,7 +248,7 @@ export default function AdminUtilisateurs() {
         {[
           { key: 'all',          label: `Tous (${counts.all})` },
           { key: 'expediteur',   label: `Expéditeurs (${counts.expediteur})` },
-          { key: 'transporteur', label: `Transporteurs (${counts.transporteur})` },
+          { key: 'chauffeur', label: `Chauffeurs (${counts.chauffeur})` },
         ].map(f => (
           <TouchableOpacity
             key={f.key}

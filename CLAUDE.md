@@ -42,7 +42,10 @@ rakibdz/
 │   ├── onboarding.jsx          # Écran d'inscription 3 étapes (rôle → profil → véhicule)
 │   ├── otp.jsx                 # Vérification téléphone (simulée, code affiché en dev)
 │   ├── notation.jsx            # Écran de notation post-livraison (UI complète, persist TODO)
-│   ├── carte-transporteurs.jsx # Carte MapView avec transporteurs simulés (mode Maintenant)
+│   ├── reservation/            # Nouvelle demande en 3 étapes (style Camio)
+│   │   ├── etape1.jsx          # Où aller ? (départ/arrivée + aperçu carte du trajet)
+│   │   ├── etape2.jsx          # Que voulez-vous expédier ? (chips marchandise + aide au chargement)
+│   │   └── etape3.jsx          # Choix du transporteur sur la carte (ex-carte-transporteurs.jsx, fusionné ici)
 │   ├── (tabs)/                 # Onglets principaux
 │   │   ├── _layout.tsx         # Tab bar avec badges notifications + messages
 │   │   ├── index.jsx           # Accueil : ExpéditeurHome (formulaire) | TransporteurHome (liste)
@@ -102,15 +105,13 @@ rakibdz/
 - Header, onglets, icônes, et libellés changent selon `user.type`
 - Badge rouge sur l'onglet "Suivi/Courses" (notifications) et "Messages" (messages non lus)
 
-### Expéditeur — Créer une demande
-- **Mode Maintenant (urgent)** : ouvre la carte des transporteurs disponibles
-- **Mode Planifié** : publie dans la marketplace avec date + créneau horaire (matin/après-midi/soir/flexible)
-- Autocomplete communes via `CityInput` (2500+ communes algériennes)
-- Détection GPS de la wilaya de départ (bouton "Ma position")
-- Sélection type de marchandise : Meubles, Électroménager, Cartons, Matériaux BTP, Véhicule, Autre
-- Options supplémentaires : étages sans ascenseur (par palier de 200 DA, max 5), aide chargement (+500 DA), fragile (+20%), express (+40%)
-- Widget d'estimation de prix en temps réel (tous véhicules) avec détail du calcul dépliable
-- Surge pricing affiché visuellement si actif
+### Expéditeur — Créer une demande (flow en 3 étapes, style Camio)
+Flow géré par `src/context/ReservationContext.jsx` (état : departure, arrival,
+categories, description, aideChargement) + `app/reservation/etape{1,2,3}.jsx` :
+- **Étape 1** (`etape1.jsx`) : départ/arrivée via `CityInput` (2500+ communes, détection GPS intégrée) + aperçu carte du trajet (WebView/Leaflet)
+- **Étape 2** (`etape2.jsx`) : type de marchandise en chips multi-sélection (Déménagement, Électroménager, Matériaux, Marchandises, Fruits/Légumes, Autre), description libre, compteur aide au chargement (0 à 5 personnes)
+- **Étape 3** (`etape3.jsx`) : carte des transporteurs simulés disponibles (WebView/Leaflet, mode Maintenant uniquement), sélection → bottom sheet (véhicule, note, distance, prix) → demande envoyée avec simulation d'acceptation/refus
+- Mode Planifié (date/créneau, publication marketplace) retiré avec l'ancien flow 6 étapes — à reconstruire si besoin (voir "reste à développer")
 
 ### Transporteur — Trouver des courses
 - Liste des demandes disponibles avec pull-to-refresh
@@ -373,7 +374,7 @@ border:      '#E2E8F0'  // séparateurs
 
 ### Priorité moyenne
 - **Supabase / backend** : les fichiers `src/lib/supabase.js` et `src/lib/firebase.js` existent. Migrer de SQLite local vers un backend partagé pour que expéditeurs et transporteurs sur des appareils différents voient les mêmes données
-- **Vraie carte mode planifié** : actuellement la carte (`carte-transporteurs.jsx`) n'est accessible qu'en mode "Maintenant" avec des transporteurs simulés
+- **Mode Planifié** : supprimé avec l'ancien flow de réservation en 6 étapes (recapitulatif.jsx gérait le date/heure picker et la publication marketplace) — le flow actuel (`app/reservation/etape{1,2,3}.jsx`) ne gère que le mode Maintenant avec transporteurs simulés
 - **Transporteurs réels sur la carte** : la table `transporteurs_disponibles` supporte les vrais utilisateurs (`is_simule = 0`) mais aucun vrai transporteur n'y est inséré
 - **Messages/[id]** : le fichier `app/messages/[id].jsx` est une ancienne version du chat, à supprimer ou unifier avec `app/chat/[id].jsx`
 - **Gestion paiement** : la tarification est calculée mais aucun paiement réel n'est implémenté (CIB/Edahabia)

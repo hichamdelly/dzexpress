@@ -101,7 +101,7 @@ export const NOTIF_META = {
   nouvelle_demande:     { icon: 'cube-outline',         color: '#1A56DB', label: 'Nouvelle demande' },
   offre_recue:          { icon: 'pricetag-outline',      color: '#7C3AED', label: 'Offre reçue' },
   course_acceptee:      { icon: 'checkmark-circle',      color: '#16A34A', label: 'Course acceptée' },
-  transporteur_enroute: { icon: 'car-sport-outline',     color: '#F97316', label: 'En route' },
+  transporteur_enroute: { icon: 'car-sport-outline',     color: '#0F4D2E', label: 'En route' },
   livraison_effectuee:  { icon: 'cube',                  color: '#16A34A', label: 'Livraison effectuée' },
   course_annulee:       { icon: 'close-circle',          color: '#DC2626', label: 'Course annulée' },
   nouveau_message:      { icon: 'chatbubble-ellipses',   color: '#0891B2', label: 'Nouveau message' },

@@ -18,7 +18,7 @@ import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance'
 import { demarrerTrackingGPS, arreterTrackingGPS, demandeEnCoursDeSuivi } from '../../src/lib/tracking';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -161,7 +161,7 @@ const ms = StyleSheet.create({
   infoAccuracy:{ fontSize: 10, color: C.muted, marginTop: 1 },
   footer:      { backgroundColor: C.bg, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.border },
   footerTxt:   { fontSize: 12, color: C.muted, fontWeight: '600' },
-  refreshBtn:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primary, borderRadius: 50, paddingHorizontal: 14, paddingVertical: 7 },
+  refreshBtn:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accent, borderRadius: 50, paddingHorizontal: 14, paddingVertical: 7 },
   refreshTxt:  { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   loading:     { height: 160, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgAlt, borderRadius: 12, gap: 10 },
   loadingTxt:  { fontSize: 14, color: C.muted, fontWeight: '600' },
@@ -312,7 +312,7 @@ export default function DetailCourseScreen() {
       const started = await demarrerTrackingGPS(parseInt(id));
       setGpsActif(started);
       if (demande.expediteur_id) {
-        notifDB.create(demande.expediteur_id, `🚛 Votre transporteur a démarré la course ! ${user.nom} est en route vers ${demande.ville_arrivee}.`, NT.TRANSPORTEUR_ENROUTE, { route: `/suivi-live/${id}` });
+        notifDB.create(demande.expediteur_id, `🚛 Votre chauffeur a démarré la course ! ${user.nom} est en route vers ${demande.ville_arrivee}.`, NT.TRANSPORTEUR_ENROUTE, { route: `/suivi-live/${id}` });
       }
       setShowStartModal(false);
       fetch();
@@ -350,7 +350,7 @@ export default function DetailCourseScreen() {
       usersDB.incrementAnnulations(user.id);
       annulationsDB.create({ demande_id: parseInt(id), user_id: user.id, role: 'transporteur', motif: selectedReason, gratuite: 0 });
       const suspDate = usersDB.checkAndSuspend(user.id);
-      if (demande.expediteur_id) notifDB.create(demande.expediteur_id, 'Votre transporteur a annulé la course. Votre demande est à nouveau disponible.', NT.COURSE_ANNULEE, { route: `/demande/${id}` });
+      if (demande.expediteur_id) notifDB.create(demande.expediteur_id, 'Votre chauffeur a annulé la course. Votre demande est à nouveau disponible.', NT.COURSE_ANNULEE, { route: `/demande/${id}` });
       setShowCancelModal(false);
       if (suspDate) {
         const fmt = new Date(suspDate).toLocaleDateString('fr-DZ', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -589,7 +589,7 @@ export default function DetailCourseScreen() {
                 </View>
               </View>
               <View style={s.commissionRow}>
-                <Text style={s.commissionTxt}>Commission DzExpress</Text>
+                <Text style={s.commissionTxt}>Commission RouteX</Text>
                 <Text style={s.commissionAmt}>{fmtPrix(part.commission)} ({100 - part.tauxGarder}%)</Text>
               </View>
             </View>
@@ -746,7 +746,7 @@ export default function DetailCourseScreen() {
         {demande.statut === 'acceptee' && !isMyOrder && isT && (
           <View style={s.takenCard}>
             <Ionicons name="lock-closed-outline" size={18} color={C.muted} style={{ marginRight: 8 }} />
-            <Text style={s.takenTxt}>Cette course a déjà été acceptée par un autre transporteur.</Text>
+            <Text style={s.takenTxt}>Cette course a déjà été acceptée par un autre chauffeur.</Text>
           </View>
         )}
 
@@ -1054,7 +1054,7 @@ const s = StyleSheet.create({
   callBtn:          { flexDirection: 'row', alignItems: 'center', backgroundColor: C.successLight, borderRadius: 10, paddingVertical: 13, paddingHorizontal: 14, borderWidth: 1.5, borderColor: '#6EE7B7' },
   callBtnTxt:       { fontSize: 14, fontWeight: '700', color: C.success },
 
-  actionBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6 },
+  actionBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 17, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6 },
   actionBtnTxt:    { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   startBtn:        { backgroundColor: C.success },
   startEmoji:      { fontSize: 18, marginRight: 8 },
@@ -1093,7 +1093,7 @@ const of = StyleSheet.create({
   sub:      { fontSize: 13, color: C.muted, marginBottom: 16 },
   label:    { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 },
   input:    { backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: C.text, marginBottom: 14 },
-  sendBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 15 },
+  sendBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 15 },
   sendBtnTxt: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   prix:     { fontSize: 22, fontWeight: '900', color: C.primary, marginBottom: 6 },
   msg:      { fontSize: 13, color: C.muted, fontStyle: 'italic', marginBottom: 12, lineHeight: 19 },

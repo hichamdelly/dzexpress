@@ -28,7 +28,7 @@ function fmtDateLabel(date) {
 }
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -66,7 +66,7 @@ const pill = StyleSheet.create({
 // ── MES DEMANDES (Expéditeur) ────────────────────────────────
 function MesDemandes({ user }) {
   const router = useRouter();
-  const { setField, reset, setOption } = useReservation();
+  const { setField, reset } = useReservation();
   const [demandes, setDemandes]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,7 +81,7 @@ function MesDemandes({ user }) {
   useFocusEffect(useCallback(() => { setLoading(true); fetch(); }, [fetch]));
 
   const annuler = (id) =>
-    Alert.alert('Annuler la demande ?', 'Elle ne sera plus visible par les transporteurs.', [
+    Alert.alert('Annuler la demande ?', 'Elle ne sera plus visible par les chauffeurs.', [
       { text: 'Non', style: 'cancel' },
       { text: 'Oui', style: 'destructive', onPress: () => { demandesDB.updateStatut(id, 'annulee'); fetch(); } },
     ]);
@@ -91,19 +91,14 @@ function MesDemandes({ user }) {
     setField('departure', d.ville_depart);
     setField('arrival',   d.ville_arrivee);
     setField('categories', (d.type_marchandise || '').split(',').filter(Boolean));
-    setField('mode',      d.type_demande || 'planifie');
-    if (d.poids)       setField('quantite',    d.poids);
     if (d.description) setField('description', d.description);
     if (d.options_supplementaires) {
       try {
         const o = JSON.parse(d.options_supplementaires);
-        if (o.etages)  setOption('etages',  o.etages);
-        if (o.aide)    setOption('aide',    o.aide);
-        if (o.fragile) setOption('fragile', o.fragile);
-        if (o.express) setOption('express', o.express);
+        if (o.aide) setField('aideChargement', 1);
       } catch {}
     }
-    router.push('/reservation/depart-arrivee');
+    router.push('/reservation/etape3');
   };
 
   const FILTRES = [
@@ -427,7 +422,7 @@ function MesCourses({ user }) {
                     onPress={() => router.push(`/course/${c.id}`)} activeOpacity={0.92}>
 
                     {cd && ['acceptee', 'en_cours'].includes(c.statut) && (
-                      <View style={[s.hintBar, { borderColor: '#FED7AA', backgroundColor: '#FFF7ED', marginBottom: 10 }]}>
+                      <View style={[s.hintBar, { borderColor: '#E9D18A', backgroundColor: '#E8F2EC', marginBottom: 10 }]}>
                         <Ionicons name="alarm-outline" size={14} color={C.accent} style={{ marginRight: 6 }} />
                         <Text style={[s.hintBarTxt, { color: C.accent }]}>{cd}</Text>
                       </View>
@@ -536,7 +531,7 @@ const s = StyleSheet.create({
   cancelTxt:     { fontSize: 13, color: C.error, fontWeight: '600' },
   seeBtn:        { flexDirection: 'row', alignItems: 'center', gap: 2 },
   seeBtnTxt:     { fontSize: 13, color: C.primary, fontWeight: '700' },
-  refaireBtn:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primary, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
+  refaireBtn:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
   refaireBtnTxt: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
 });
 

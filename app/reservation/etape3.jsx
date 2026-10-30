@@ -1,25 +1,32 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Platform,
-  StatusBar, ActivityIndicator, Alert, Dimensions, ScrollView,
+  StatusBar, ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
-import { useApp, localNotif } from '../src/context/AppContext';
-import { demandesDB, notifDB } from '../src/db/database';
+import { useApp, localNotif } from '../../src/context/AppContext';
+import { useReservation, ProgressBar } from '../../src/context/ReservationContext';
+import { demandesDB, notifDB } from '../../src/db/database';
 import {
   genererTransporteurs, simulerReponse, simulerMouvement,
   fmtTimer,
-} from '../src/simulation/transporteurs';
-import { fmtKm } from '../src/utils/wilayas';
-import { getDistanceKmPrecise as getDistanceKm } from '../src/utils/distance';
+} from '../../src/simulation/transporteurs';
+import { fmtKm } from '../../src/utils/wilayas';
+import { getVehicule } from '../../src/constants/vehicules';
+import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
 
 const ALGER = { latitude: 36.7372, longitude: 3.0865 };
 
+// Offset ajouté sous la barre de progression fixée en haut de l'écran
+// (voir ProgressBar) pour que le header flottant et la légende ne se
+// chevauchent pas avec elle.
+const PB_OFFSET = 26;
+
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -48,13 +55,13 @@ const VEH_COLOR = {
   herbine:    '#10B981',
   utilitaire: '#8B5CF6',
   fourgon:    '#1A56DB',
-  camion35:   '#F97316',
+  camion35:   '#D4A017',
   camion10:   '#EF4444',
   semi:       '#1A56DB',
 };
 // Les marqueurs de la carte (WebView/Leaflet) ne peuvent pas afficher les
 // icônes vectorielles Ionicons (police propre à React Native) — on utilise
-// un emoji équivalent par véhicule uniquement pour ces marqueurs HTML.
+// un emoji équivalent par véhicule uniquement pour ces marqueurs HTML (🚛).
 const VEH_EMOJI = {
   herbine:    '🚗',
   utilitaire: '🚙',
@@ -76,19 +83,9 @@ function calculerDistance(lat1, lon1, lat2, lon2) {
   return (R * c).toFixed(1);
 }
 
-// ── Carte (WebView + Leaflet/OpenStreetMap) ──────────────────
-// react-native-maps (PROVIDER_DEFAULT → Google Maps sur Android) affiche
-// un fond de carte vide sans clé Google Maps API configurée. On utilise à
-// la place une WebView chargeant Leaflet + des tuiles OpenStreetMap
-// (gratuit, sans clé), même solution que app/select-location.jsx.
-//
-// Les marqueurs des transporteurs bougent (simulation toutes les 30s) et
-// sont cliquables : la liste complète est repoussée dans la WebView via
-// injectJavaScript (window.updateMarkers) à chaque changement, et un clic
-// sur un marqueur remonte vers React Native via postMessage.
-//
-// Note usage : tile.openstreetmap.org est un service public à usage
-// raisonnable — voir la note dans app/select-location.jsx.
+// ── Carte (WebView + Leaflet/OpenStreetMap) — style "Google Maps" avec
+// marqueurs rouges 🚛 pour les transporteurs disponibles. Même approche
+// que l'ancien app/carte-transporteurs.jsx (pas de clé Google Maps requise).
 const mapHTML = (latitude, longitude) => `
 <!DOCTYPE html>
 <html>
@@ -106,7 +103,7 @@ const mapHTML = (latitude, longitude) => `
       box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
     .t-marker.selected {
-      border-color: #F97316;
+      border-color: #0F4D2E;
       box-shadow: 0 0 0 6px rgba(249,115,22,0.22), 0 2px 4px rgba(0,0,0,0.3);
     }
     .my-pos {
@@ -182,12 +179,16 @@ const sm = StyleSheet.create({
 });
 
 // ════════════════════════════════════════════════════════════
-export default function CarteTransporteursScreen() {
+export default function Etape3Screen() {
   const router  = useRouter();
   const { user } = useApp();
-  const params  = useLocalSearchParams();
-  const { depart, arrivee, type, poids, desc } = params;
-  const routeKm = getDistanceKm(depart, arrivee);
+  const ctx     = useReservation();
+  const { departure: depart, arrival: arrivee, categories, description: desc, aideChargement, vehicule, reset } = ctx;
+  const vehTarif = getVehicule(vehicule)?.tarif || null;
+
+  const typeMarchandise = (categories || []).join(',');
+  const aideFee  = (aideChargement || 0) * 500;
+  const routeKm  = getDistanceKm(depart, arrivee);
 
   const webviewRef       = useRef(null);
   const cancelSimRef     = useRef(null);
@@ -206,16 +207,18 @@ export default function CarteTransporteursScreen() {
   const [demandeId, setDemandeId]       = useState(null);
 
   // Transporteurs enrichis d'une distance réelle (haversine) depuis la
-  // position de l'utilisateur, triés du plus proche au plus loin.
+  // position de l'utilisateur et du prix final (avec aide au chargement),
+  // triés du plus proche au plus loin.
   const transporteursTries = useMemo(() => {
     if (!myPos) return transporteurs;
     return transporteurs
       .map(t => ({
         ...t,
         distance_km: parseFloat(calculerDistance(myPos.latitude, myPos.longitude, t.latitude, t.longitude)),
+        prix_final:  t.prix_estime + aideFee,
       }))
       .sort((a, b) => a.distance_km - b.distance_km);
-  }, [transporteurs, myPos]);
+  }, [transporteurs, myPos, aideFee]);
 
   const chargerPosition = useCallback(async () => {
     setPhase('loading');
@@ -238,29 +241,22 @@ export default function CarteTransporteursScreen() {
           latitude = pos.coords.latitude;
           longitude = pos.coords.longitude;
         } catch (gpsErr) {
-          // GPS indisponible/timeout → on ne bloque pas l'écran, on replie sur Alger.
           console.log('Position GPS indisponible, repli sur Alger par défaut:', gpsErr?.message);
           usedFallback = true;
         }
       }
       setNoPermission(usedFallback);
       setMyPos({ latitude, longitude });
-      // La WebView n'est construite qu'une seule fois (au premier chargement
-      // réussi) — un rafraîchissement ultérieur repositionne la carte déjà
-      // montée via recenterMap plutôt que de recharger toute la page HTML.
       setMapHtml(prev => prev || mapHTML(latitude, longitude));
-      const dispos = genererTransporteurs(latitude, longitude, 8, routeKm);
-      console.log('Transporteurs trouvés:', dispos.length);
+      const dispos = genererTransporteurs(latitude, longitude, 8, routeKm, vehTarif);
       setTransporteurs(dispos);
       setPhase('map');
     } catch (e) {
-      // Erreur réellement inattendue (ex: génération des transporteurs) —
-      // on tente quand même un dernier repli sur Alger plutôt que de bloquer.
       console.log('Erreur chargement carte transporteurs:', e?.message);
       setLocationErr('GPS indisponible. Vérifie que la localisation est activée.');
       setPhase('error');
     }
-  }, [routeKm]);
+  }, [routeKm, vehTarif]);
 
   useEffect(() => { chargerPosition(); }, []);
 
@@ -287,9 +283,6 @@ export default function CarteTransporteursScreen() {
     clearInterval(moveIntervalRef.current);
   }, []);
 
-  // Pousse la liste des transporteurs (position, couleur, sélection) dans
-  // la WebView à chaque changement — chargement initial, mouvement simulé
-  // toutes les 30s, ou sélection d'un marqueur/carte mini-liste.
   useEffect(() => {
     if (!webviewReady) return;
     const payload = JSON.stringify({
@@ -307,8 +300,6 @@ export default function CarteTransporteursScreen() {
     );
   }, [webviewReady, transporteursTries, selected]);
 
-  // Recentre la carte (déjà montée) quand la position GPS change, ex. via
-  // le bouton "rafraîchir" — la WebView elle-même n'est jamais rechargée.
   useEffect(() => {
     if (!webviewReady || !myPos) return;
     webviewRef.current?.injectJavaScript(
@@ -328,14 +319,16 @@ export default function CarteTransporteursScreen() {
 
   const envoyerDemande = (t) => {
     if (!t.disponible) {
-      Alert.alert('Transporteur occupé', 'Ce transporteur est actuellement en course. Choisis-en un autre.');
+      Alert.alert('Chauffeur occupé', 'Ce chauffeur est actuellement en course. Choisis-en un autre.');
       return;
     }
     setSelected(t);
     setPhase('waiting');
     const id = demandesDB.createMaintenant({
       expediteur_id: user.id, ville_depart: depart, ville_arrivee: arrivee,
-      type_marchandise: type, poids: poids || null, description: desc || null, transporteur_simule: t,
+      type_marchandise: typeMarchandise, poids: null, description: desc || null,
+      transporteur_simule: { ...t, prix_estime: t.prix_final },
+      vehicule_recommande: vehTarif,
     });
     setDemandeId(id);
     localNotif(user.id, `Demande envoyée à ${t.nom} — en attente de réponse…`);
@@ -350,12 +343,13 @@ export default function CarteTransporteursScreen() {
     notifDB.create(user.id, `${t.nom} a accepté ta demande ${depart} → ${arrivee} !`);
     setAcceptedT(t);
     setPhase('accepted');
+    reset();
   };
 
   const handleRefus = (reason) => {
     cancelSimRef.current?.();
     if (demandeId) demandesDB.updateStatut(demandeId, 'annulee');
-    localNotif(user.id, `${selected?.nom || 'Le transporteur'} n'est pas disponible — choisis-en un autre sur la carte.`);
+    localNotif(user.id, `${selected?.nom || 'Le chauffeur'} n'est pas disponible — choisis-en un autre sur la carte.`);
     setPhase('refused');
     setDemandeId(null);
     setTimeout(() => {
@@ -363,6 +357,11 @@ export default function CarteTransporteursScreen() {
       setSelected(null);
       setPhase('map');
     }, 2500);
+  };
+
+  const fermer = () => {
+    if (phase === 'waiting') annulerAttente();
+    router.replace('/(tabs)');
   };
 
   const annulerAttente = () => {
@@ -378,7 +377,7 @@ export default function CarteTransporteursScreen() {
     <View style={s.fullCenter}>
       <StatusBar barStyle="dark-content" />
       <ActivityIndicator size="large" color={C.accent} />
-      <Text style={s.loadingTxt}>Recherche des transporteurs autour de vous…</Text>
+      <Text style={s.loadingTxt}>Recherche des chauffeurs autour de vous…</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
         <Ionicons name="location-outline" size={14} color={C.muted} />
         <Text style={s.loadingTxt2}>Localisation en cours</Text>
@@ -455,7 +454,7 @@ export default function CarteTransporteursScreen() {
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 20 }}>
           <Ionicons name="wallet-outline" size={15} color={C.muted} />
-          <Text style={s.prixEstime}>Prix estimé · ~{acceptedT.prix_estime.toLocaleString()} DA</Text>
+          <Text style={s.prixEstime}>Prix estimé · ~{(acceptedT.prix_final ?? acceptedT.prix_estime).toLocaleString()} DA</Text>
         </View>
 
         <TouchableOpacity style={s.doneBtn} onPress={() => router.replace('/(tabs)/suivi')}>
@@ -486,13 +485,18 @@ export default function CarteTransporteursScreen() {
         />
       )}
 
+      {/* Barre de progression (3/3) */}
+      <View style={s.pbBar}>
+        <ProgressBar step={3} total={3} />
+      </View>
+
       {/* Header flottant */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => phase === 'map' ? router.back() : annulerAttente()}>
           <Ionicons name="arrow-back" size={18} color={C.text} />
         </TouchableOpacity>
         <View style={s.headerCenter}>
-          <Text style={s.headerTitle}>Choisir un transporteur</Text>
+          <Text style={s.headerTitle}>Choisissez votre chauffeur</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
             <Ionicons name="navigate-outline" size={11} color={C.muted} />
             <Text style={s.headerSub} numberOfLines={1}>
@@ -503,13 +507,16 @@ export default function CarteTransporteursScreen() {
         <TouchableOpacity style={s.refreshMapBtn} onPress={chargerPosition}>
           <Ionicons name="refresh-outline" size={18} color={C.muted} />
         </TouchableOpacity>
+        <TouchableOpacity style={s.backBtn} onPress={fermer}>
+          <Ionicons name="close" size={18} color={C.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Bannière permission refusée */}
       {phase === 'map' && noPermission && (
         <View style={s.noPermBanner}>
           <Ionicons name="location-outline" size={20} color={C.warning} />
-          <Text style={s.noPermTxt}>Activez la géolocalisation pour voir les transporteurs près de vous</Text>
+          <Text style={s.noPermTxt}>Activez la géolocalisation pour voir les chauffeurs près de vous</Text>
           <TouchableOpacity style={s.noPermBtn} onPress={chargerPosition}>
             <Text style={s.noPermBtnTxt}>Activer</Text>
           </TouchableOpacity>
@@ -531,7 +538,7 @@ export default function CarteTransporteursScreen() {
         </View>
       )}
 
-      {/* Bottom sheet — sélection transporteur */}
+      {/* Bottom sheet — infos transporteur sélectionné (nom, véhicule, note, distance, prix) */}
       {phase === 'map' && selected && (
         <View style={s.sheet}>
           <View style={s.sheetHandle} />
@@ -558,18 +565,18 @@ export default function CarteTransporteursScreen() {
             <SheetMeta iconName="star-outline" label={`${selected.rating} (${selected.nb_courses})`} />
             <SheetMeta iconName="car-sport-outline" label={`${selected.distance_km} km`} />
             {routeKm && <SheetMeta iconName="resize-outline" label={fmtKm(routeKm)} />}
-            <SheetMeta iconName="wallet-outline" label={`~${(selected.prix_estime / 1000).toFixed(1)}k DA`} />
+            <SheetMeta iconName="wallet-outline" label={`~${((selected.prix_final ?? selected.prix_estime) / 1000).toFixed(1)}k DA`} />
           </View>
 
           {selected.disponible ? (
             <TouchableOpacity style={s.sendBtn} onPress={() => envoyerDemande(selected)} activeOpacity={0.88}>
               <Ionicons name="send-outline" size={18} color="#FFFFFF" style={{ marginRight: 9 }} />
-              <Text style={s.sendBtnTxt}>Demander ce transporteur</Text>
+              <Text style={s.sendBtnTxt}>Demander ce chauffeur</Text>
             </TouchableOpacity>
           ) : (
             <View style={s.occupeMsg}>
               <Ionicons name="lock-closed-outline" size={14} color={C.muted} style={{ marginRight: 7 }} />
-              <Text style={s.occupeMsgTxt}>Ce transporteur est en course — choisis-en un autre</Text>
+              <Text style={s.occupeMsgTxt}>Ce chauffeur est en course — choisis-en un autre</Text>
             </View>
           )}
 
@@ -618,7 +625,7 @@ export default function CarteTransporteursScreen() {
                 <View style={[s.countdownFill, { width: `${(countdown / 120) * 100}%`, backgroundColor: countdown < 30 ? C.error : C.primary }]} />
               </View>
             </View>
-            <Text style={s.waitHint}>Le transporteur a 2 minutes pour accepter ou refuser.</Text>
+            <Text style={s.waitHint}>Le chauffeur a 2 minutes pour accepter ou refuser.</Text>
             <TouchableOpacity style={s.cancelWaitBtn} onPress={annulerAttente}>
               <Text style={s.cancelWaitTxt}>Annuler</Text>
             </TouchableOpacity>
@@ -633,7 +640,7 @@ export default function CarteTransporteursScreen() {
             <View style={s.refusedIconBox}><Ionicons name="close-circle" size={48} color={C.error} /></View>
             <Text style={[s.waitNom, { color: C.error }]}>Demande refusée</Text>
             <Text style={s.waitHint}>
-              Ce transporteur n'est pas disponible.{'\n'}
+              Ce chauffeur n'est pas disponible.{'\n'}
               Reviens à la carte pour en choisir un autre.
             </Text>
           </View>
@@ -646,7 +653,7 @@ export default function CarteTransporteursScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <View style={[s.legendDot, { backgroundColor: C.success, width: 9, height: 9 }]} />
             <Text style={s.bottomListTitle}>
-              {disponibles.length} transporteur{disponibles.length !== 1 ? 's' : ''} disponible{disponibles.length !== 1 ? 's' : ''} autour de toi
+              {disponibles.length} chauffeur{disponibles.length !== 1 ? 's' : ''} disponible{disponibles.length !== 1 ? 's' : ''} autour de toi
             </Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
@@ -661,7 +668,7 @@ export default function CarteTransporteursScreen() {
                   <Text style={s.miniMeta}>{t.rating}</Text>
                 </View>
                 <Text style={s.miniMeta}>{t.distance_km} km</Text>
-                <Text style={s.miniPrix}>~{(t.prix_estime / 1000).toFixed(1)}k DA</Text>
+                <Text style={s.miniPrix}>~{(t.prix_final / 1000).toFixed(1)}k DA</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -678,24 +685,26 @@ const s = StyleSheet.create({
   errorIconBox:  { width: 72, height: 72, borderRadius: 36, backgroundColor: C.errorLight, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   errorTitle:    { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
   errorDesc:     { fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
-  retryBtn:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primary, borderRadius: 50, paddingHorizontal: 24, paddingVertical: 13, marginBottom: 12 },
+  retryBtn:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accent, borderRadius: 50, paddingHorizontal: 24, paddingVertical: 13, marginBottom: 12 },
   retryTxt:      { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
   backLink:      { flexDirection: 'row', alignItems: 'center', padding: 10 },
   backLinkTxt:   { color: C.muted, fontWeight: '600', fontSize: 14 },
 
-  noPermBanner:  { position: 'absolute', top: Platform.OS === 'ios' ? 130 : (StatusBar.currentHeight || 24) + 84, left: 12, right: 12, backgroundColor: 'rgba(255,253,235,0.97)', borderRadius: 14, borderWidth: 1.5, borderColor: '#FCD34D', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6 },
+  pbBar: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(255,255,255,0.96)', paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 24) },
+
+  noPermBanner:  { position: 'absolute', top: Platform.OS === 'ios' ? 130 + PB_OFFSET : (StatusBar.currentHeight || 24) + 84 + PB_OFFSET, left: 12, right: 12, backgroundColor: 'rgba(255,253,235,0.97)', borderRadius: 14, borderWidth: 1.5, borderColor: '#FCD34D', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6 },
   noPermTxt:     { flex: 1, fontSize: 13, fontWeight: '600', color: '#92400E', lineHeight: 18 },
   noPermBtn:     { backgroundColor: C.accent, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
   noPermBtnTxt:  { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
-  header:        { position: 'absolute', top: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 8, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 8, gap: 10 },
+  header:        { position: 'absolute', top: Platform.OS === 'ios' ? 56 + PB_OFFSET : (StatusBar.currentHeight || 24) + 8 + PB_OFFSET, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 8, gap: 10 },
   backBtn:       { width: 34, height: 34, borderRadius: 17, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center' },
   headerCenter:  { flex: 1 },
   headerTitle:   { fontSize: 14, fontWeight: '800', color: C.text },
   headerSub:     { fontSize: 11, color: C.muted },
   refreshMapBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center' },
 
-  legend:        { position: 'absolute', top: Platform.OS === 'ios' ? 126 : (StatusBar.currentHeight || 24) + 78, right: 12, backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 12, padding: 10, elevation: 4, gap: 6 },
+  legend:        { position: 'absolute', top: Platform.OS === 'ios' ? 126 + PB_OFFSET : (StatusBar.currentHeight || 24) + 78 + PB_OFFSET, right: 12, backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 12, padding: 10, elevation: 4, gap: 6 },
   legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot:     { width: 10, height: 10, borderRadius: 5 },
   legendTxt:     { fontSize: 12, fontWeight: '600', color: C.text },
@@ -712,7 +721,7 @@ const s = StyleSheet.create({
   dispoIndicator:{ width: 7, height: 7, borderRadius: 4 },
   dispoBadgeTxt: { fontSize: 12, fontWeight: '700', color: C.success },
   sheetMeta:     { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: C.bgAlt, borderRadius: 12, paddingVertical: 14, marginBottom: 16 },
-  sendBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 16, marginBottom: 10 },
+  sendBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 16, marginBottom: 10 },
   sendBtnTxt:    { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   occupeMsg:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgAlt, borderRadius: 12, paddingVertical: 13, marginBottom: 10, paddingHorizontal: 12 },
   occupeMsgTxt:  { fontSize: 13, color: C.muted, fontWeight: '600' },
@@ -763,6 +772,6 @@ const s = StyleSheet.create({
   phoneNumber:     { fontSize: 26, fontWeight: '900', color: C.success, letterSpacing: 1, marginVertical: 4 },
   phoneSub:        { fontSize: 12, color: C.success, marginTop: 2 },
   prixEstime:      { fontSize: 14, fontWeight: '700', color: C.muted },
-  doneBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 16, paddingHorizontal: 32 },
+  doneBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 16, paddingHorizontal: 32 },
   doneBtnTxt:      { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 });

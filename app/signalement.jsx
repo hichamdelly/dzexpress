@@ -10,7 +10,7 @@ import { useApp } from '../src/context/AppContext';
 import { signalementsDB, demandesDB } from '../src/db/database';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -20,7 +20,7 @@ const C = {
 const CATEGORIES = [
   { key: 'paiement',     label: 'Paiement',         icon: 'cash-outline',           color: '#D97706', bg: '#FFFBEB' },
   { key: 'comportement', label: 'Comportement',      icon: 'person-remove-outline',  color: '#7C3AED', bg: '#F5F3FF' },
-  { key: 'marchandise',  label: 'Marchandise',       icon: 'cube-outline',           color: '#EA580C', bg: '#FFF7ED' },
+  { key: 'marchandise',  label: 'Marchandise',       icon: 'cube-outline',           color: '#D4A017', bg: '#E8F2EC' },
   { key: 'bug',          label: 'Bug technique',     icon: 'bug-outline',            color: '#DC2626', bg: '#FEF2F2' },
   { key: 'abus',         label: 'Fraude / Abus',     icon: 'shield-outline',         color: '#9333EA', bg: '#FAF5FF' },
   { key: 'autre',        label: 'Autre',             icon: 'help-circle-outline',    color: '#6B7280', bg: '#F9FAFB' },
@@ -124,7 +124,7 @@ export default function SignalementScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.successTitle}>Signalement envoyé</Text>
-              <Text style={s.successSub}>Notre équipe le traitera sous 24h. Merci de nous aider à améliorer DzExpress.</Text>
+              <Text style={s.successSub}>Notre équipe le traitera sous 24h. Merci de nous aider à améliorer RouteX.</Text>
             </View>
             <TouchableOpacity onPress={() => setSucces(false)}>
               <Ionicons name="close" size={18} color={C.success} />
@@ -355,7 +355,7 @@ const s = StyleSheet.create({
   descWarn:   { fontSize: 11, color: C.error, marginTop: 5 },
 
   submitSection: { paddingHorizontal: 16, marginTop: 16, gap: 10 },
-  sendBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 16, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6 },
+  sendBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 16, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6 },
   sendBtnDisabled: { backgroundColor: '#D1D5DB', elevation: 0 },
   sendBtnTxt:      { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   submitNote:      { textAlign: 'center', fontSize: 12, color: C.muted },

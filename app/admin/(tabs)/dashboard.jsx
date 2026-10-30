@@ -10,7 +10,7 @@ import { adminDB } from '../../../src/db/database';
 
 const C = {
   bg: '#F8FAFC', card: '#FFFFFF',
-  primary: '#1A56DB', accent: '#F97316',
+  primary: '#1A56DB', accent: '#0F4D2E',
   success: '#16A34A', error: '#DC2626', warning: '#D97706', purple: '#7C3AED',
   text: '#0F172A', muted: '#64748B', border: '#E2E8F0',
 };
@@ -154,7 +154,7 @@ export default function AdminDashboard() {
             <Ionicons name="shield-checkmark" size={11} color={C.primary} />
             <Text style={s.headerBadgeTxt}>Gestionnaire</Text>
           </View>
-          <Text style={s.headerTitle}>DzExpress Admin</Text>
+          <Text style={s.headerTitle}>RouteX Admin</Text>
           <Text style={s.headerSub}>Bonjour, {adminNom.split(' ')[0]}</Text>
         </View>
         <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
@@ -244,7 +244,7 @@ export default function AdminDashboard() {
           <View style={s.userStat}>
             <Ionicons name="car-sport-outline" size={18} color={C.primary} />
             <Text style={s.userStatNum}>{stats.totalTrans}</Text>
-            <Text style={s.userStatLbl}>Transporteurs</Text>
+            <Text style={s.userStatLbl}>Chauffeurs</Text>
           </View>
           <View style={s.userDivider} />
           <View style={s.userStat}>

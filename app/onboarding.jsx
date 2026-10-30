@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, TextInput, ScrollView,
   StyleSheet, Platform, StatusBar, ActivityIndicator, Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { usersDB } from '../src/db/database';
@@ -10,7 +11,7 @@ import { useApp } from '../src/context/AppContext';
 import { searchVilles } from '../src/utils/wilayas';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981',
@@ -32,27 +33,6 @@ const VEHICULES = [
   { key: 'camion10', label: 'Camion 10T',    sub: 'Charge lourde',  icon: 'car-sport-outline' },
   { key: 'semi',     label: 'Semi-remorque', sub: 'Très lourd',     icon: 'navigate-outline' },
 ];
-
-// ── Logo ─────────────────────────────────────────────────────
-function Logo({ size = 'lg' }) {
-  const big = size === 'lg';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <View style={[ls.badge, big && ls.badgeLg]}>
-        <Text style={[ls.dz, big && ls.dzLg]}>Dz</Text>
-      </View>
-      <Text style={[ls.express, big && ls.expressLg]}>Express</Text>
-    </View>
-  );
-}
-const ls = StyleSheet.create({
-  badge:    { backgroundColor: C.accent, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
-  badgeLg:  { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
-  dz:       { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
-  dzLg:     { fontSize: 22, fontWeight: '800' },
-  express:  { fontSize: 16, fontWeight: '800', color: C.primary, letterSpacing: -0.3 },
-  expressLg:{ fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
-});
 
 export default function OnboardingScreen() {
   const router    = useRouter();
@@ -108,11 +88,13 @@ export default function OnboardingScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <View style={s.logoSection}>
-        <Logo size="lg" />
+        <Image
+          source={require('../assets/images/routex-logo.jpg')}
+          style={{ alignSelf: 'stretch', height: 320 }}
+          contentFit="contain"
+        />
         <Text style={s.tagline}>Transport de marchandises en Algérie</Text>
       </View>
-
-      <Text style={s.sectionTitle}>Comment tu utilises l'app ?</Text>
 
       <TouchableOpacity style={s.roleCard} onPress={() => goStep2('expediteur')} activeOpacity={0.88}>
         <View style={[s.roleIcon, { backgroundColor: C.accentLight }]}>
@@ -120,7 +102,7 @@ export default function OnboardingScreen() {
         </View>
         <View style={s.roleText}>
           <Text style={s.roleTitle}>Expéditeur</Text>
-          <Text style={s.roleSub}>J'ai une marchandise à envoyer et je cherche un transporteur</Text>
+          <Text style={s.roleSub}>J'ai une marchandise à envoyer et je cherche un chauffeur</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
       </TouchableOpacity>
@@ -130,7 +112,7 @@ export default function OnboardingScreen() {
           <Ionicons name="car-sport-outline" size={28} color="#0EA5E9" />
         </View>
         <View style={s.roleText}>
-          <Text style={s.roleTitle}>Transporteur</Text>
+          <Text style={s.roleTitle}>Chauffeur</Text>
           <Text style={s.roleSub}>J'ai un véhicule et je cherche des chargements</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
@@ -162,7 +144,7 @@ export default function OnboardingScreen() {
         <View style={[s.stepIcon, { backgroundColor: role === 'expediteur' ? C.accentLight : '#F0F9FF' }]}>
           <Ionicons name={role === 'expediteur' ? 'cube-outline' : 'car-sport-outline'} size={24} color={role === 'expediteur' ? C.accent : '#0EA5E9'} />
         </View>
-        <Text style={s.stepTitle}>{role === 'expediteur' ? 'Profil expéditeur' : 'Profil transporteur'}</Text>
+        <Text style={s.stepTitle}>{role === 'expediteur' ? 'Profil expéditeur' : 'Profil chauffeur'}</Text>
         <Text style={s.stepSub}>Ces infos seront visibles par les autres utilisateurs</Text>
       </View>
 
@@ -329,9 +311,8 @@ const s = StyleSheet.create({
   },
 
   // Étape 1
-  logoSection: { alignItems: 'flex-start', marginBottom: 48 },
-  tagline:     { fontSize: 14, color: C.muted, marginTop: 8 },
-  sectionTitle:{ fontSize: 22, fontWeight: '700', color: C.text, marginBottom: 20, letterSpacing: -0.4 },
+  logoSection: { alignItems: 'center', marginBottom: 20 },
+  tagline:     { fontSize: 14, color: C.muted, marginTop: 4, textAlign: 'center' },
 
   roleCard: {
     flexDirection: 'row', alignItems: 'center',
@@ -358,7 +339,7 @@ const s = StyleSheet.create({
 
   stepDots: { flexDirection: 'row', gap: 6, marginBottom: 28 },
   dot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: C.border },
-  dotActive:{ backgroundColor: C.accent, width: 20, borderRadius: 4 },
+  dotActive:{ backgroundColor: '#D4A017', width: 20, borderRadius: 4 },
 
   label: { fontSize: 12, fontWeight: '600', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
   input: {
@@ -377,7 +358,7 @@ const s = StyleSheet.create({
   otpBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border, borderRadius: 8, paddingVertical: 11, marginBottom: 18 },
   otpBtnTxt: { fontSize: 14, fontWeight: '600', color: C.muted },
 
-  primaryBtn:    { backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
+  primaryBtn:    { backgroundColor: C.accent, borderRadius: 50, paddingVertical: 17, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
   primaryBtnTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 
   // Véhicules

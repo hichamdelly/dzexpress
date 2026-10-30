@@ -278,7 +278,7 @@ export function initDatabase() {
       d.runSync(
         `INSERT INTO users (nom, telephone, wilaya, type, mot_de_passe)
          VALUES (?,?,?,?,?)`,
-        ['Admin DzExpress', '+213555000000', 'Alger', 'gestionnaire', 'admin123']
+        ['Admin RouteX', '+213555000000', 'Alger', 'gestionnaire', 'admin123']
       );
     }
   } catch (_) {}
@@ -466,14 +466,17 @@ export const demandesDB = {
 
   // Pour mode Maintenant : crée la demande et associe un transporteur simulé
   createMaintenant: ({ expediteur_id, ville_depart, ville_arrivee,
-                        type_marchandise, poids, description, transporteur_simule }) => {
+                        type_marchandise, poids, description, transporteur_simule,
+                        vehicule_recommande = null }) => {
     const r = getDB().runSync(
       `INSERT INTO demandes
          (expediteur_id, ville_depart, ville_arrivee, type_marchandise,
-          poids, description, date_souhaitee, type_demande, transporteur_simule)
-       VALUES (?, ?, ?, ?, ?, ?, 'Maintenant', 'maintenant', ?)`,
+          poids, description, date_souhaitee, type_demande, transporteur_simule,
+          vehicule_recommande)
+       VALUES (?, ?, ?, ?, ?, ?, 'Maintenant', 'maintenant', ?, ?)`,
       [expediteur_id, ville_depart, ville_arrivee, type_marchandise,
-       poids || null, description || null, JSON.stringify(transporteur_simule)]
+       poids || null, description || null, JSON.stringify(transporteur_simule),
+       vehicule_recommande]
     );
     return r.lastInsertRowId;
   },

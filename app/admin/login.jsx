@@ -59,10 +59,10 @@ export default function AdminLoginScreen() {
       {/* Logo */}
       <View style={s.logoSection}>
         <View style={s.logoBadge}>
+          <Text style={s.logoExpress}>Route</Text>
           <View style={s.logoInner}>
-            <Text style={s.logoDz}>Dz</Text>
+            <Text style={s.logoDz}>X</Text>
           </View>
-          <Text style={s.logoExpress}>Express</Text>
         </View>
         <View style={s.adminBadge}>
           <Ionicons name="shield-checkmark" size={12} color={C.primary} />
@@ -71,7 +71,7 @@ export default function AdminLoginScreen() {
       </View>
 
       <Text style={s.title}>Connexion Admin</Text>
-      <Text style={s.sub}>Accès réservé aux gestionnaires DzExpress</Text>
+      <Text style={s.sub}>Accès réservé aux gestionnaires RouteX</Text>
 
       {/* Card formulaire */}
       <View style={s.card}>
@@ -150,7 +150,7 @@ const s = StyleSheet.create({
 
   logoSection: { alignItems: 'center', marginBottom: 32, gap: 10 },
   logoBadge:   { flexDirection: 'row', alignItems: 'center' },
-  logoInner:   { backgroundColor: '#F97316', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginRight: 5 },
+  logoInner:   { backgroundColor: '#D4A017', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 4 },
   logoDz:      { fontSize: 20, fontWeight: '800', color: '#FFFFFF' },
   logoExpress: { fontSize: 22, fontWeight: '800', color: C.text, letterSpacing: -0.5 },
   adminBadge:  { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#EBF5FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 50 },

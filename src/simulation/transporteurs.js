@@ -71,7 +71,9 @@ function coursesByRating(rating) {
  * Génère `count` transporteurs fictifs autour de (centerLat, centerLng).
  * Véhicules pondérés, notes réalistes, prix via moteur de tarification.
  */
-export function genererTransporteurs(centerLat, centerLng, count = 8, routeKm = null) {
+// vehiculeTarif : clé TARIFS_BASE du véhicule choisi à l'étape 2 — tous les
+// chauffeurs simulés ont alors ce véhicule (prix cohérent avec le choix).
+export function genererTransporteurs(centerLat, centerLng, count = 8, routeKm = null, vehiculeTarif = null) {
   const km  = Math.max(5, routeKm || 50);
   const now = new Date();
 
@@ -81,7 +83,7 @@ export function genererTransporteurs(centerLat, centerLng, count = 8, routeKm = 
   return Array.from({ length: count }, (_, i) => {
     const angle   = (i / count) * 2 * Math.PI + rnd(-0.4, 0.4);
     const radius  = rnd(0.018, 0.135);       // ~2 km à ~15 km (1° ≈ 111 km)
-    const veh     = randomVehicule();
+    const veh     = vehiculeTarif || randomVehicule();
     const rating  = randomRating();
     const distM   = Math.round(radius * 111_000);
     // Tous disponibles à la génération (démo mode Maintenant) — un

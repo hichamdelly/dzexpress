@@ -12,7 +12,7 @@ import { fmtPrix } from '../../src/utils/pricing';
 import { useLanguage } from '../../src/i18n';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -127,7 +127,7 @@ export default function ProfilScreen() {
         <Text style={s.userName}>{user.nom}</Text>
         <View style={s.typeBadge}>
           <Ionicons name={isT ? 'car-sport-outline' : 'cube-outline'} size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-          <Text style={s.typeBadgeTxt}>{isT ? 'Transporteur' : 'Expéditeur'}</Text>
+          <Text style={s.typeBadgeTxt}>{isT ? 'Chauffeur' : 'Expéditeur'}</Text>
         </View>
         {isT && (
           <View style={[p.onlineBadge, { backgroundColor: dispo ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.1)' }]}>
@@ -384,8 +384,8 @@ export default function ProfilScreen() {
         </View>
         <View style={s.aboutCard}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <View style={s.logoBadge}><Text style={s.logoDz}>Dz</Text></View>
-            <Text style={s.logoExpress}>Express</Text>
+            <Text style={s.logoExpress}>Route</Text>
+            <View style={s.logoBadge}><Text style={s.logoDz}>X</Text></View>
           </View>
           <Text style={s.aboutDesc}>
             Plateforme de transport de marchandises en Algérie.{'\n'}
@@ -505,14 +505,14 @@ const s = StyleSheet.create({
   editBtns:     { flexDirection: 'row', gap: 10, marginTop: 6 },
   cancelEditBtn:{ flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 50, paddingVertical: 14, alignItems: 'center' },
   cancelEditTxt:{ fontSize: 14, fontWeight: '700', color: C.muted },
-  saveBtn:      { flex: 2, backgroundColor: C.primary, borderRadius: 50, paddingVertical: 14, alignItems: 'center' },
+  saveBtn:      { flex: 2, backgroundColor: C.accent, borderRadius: 50, paddingVertical: 14, alignItems: 'center' },
   saveBtnTxt:   { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
 
   otpBtn:    { flexDirection: 'row', alignItems: 'center', marginTop: 14, paddingVertical: 13, paddingHorizontal: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 10, backgroundColor: C.bgAlt },
   otpBtnTxt: { fontSize: 14, fontWeight: '700', color: C.accent },
 
   aboutCard:    { backgroundColor: C.bgAlt, borderRadius: 10, padding: 14 },
-  logoBadge:    { backgroundColor: C.accent, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, marginRight: 5 },
+  logoBadge:    { backgroundColor: '#D4A017', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, marginLeft: 4 },
   logoDz:       { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
   logoExpress:  { color: C.text, fontSize: 16, fontWeight: '800' },
   aboutDesc:    { fontSize: 13, color: C.muted, lineHeight: 20, marginBottom: 8 },

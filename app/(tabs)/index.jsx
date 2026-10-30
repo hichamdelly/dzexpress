@@ -17,6 +17,7 @@ import { calculerPositionSimulee } from '../../src/lib/simulationTrajet';
 import { calculerPrix, calculerSurge, fmtPrix, TARIFS_BASE } from '../../src/utils/pricing';
 import { useReservation } from '../../src/context/ReservationContext';
 import { useLanguage } from '../../src/i18n';
+import { C } from '../../src/constants/theme';
 
 function _haversine(lat1, lng1, lat2, lng2) {
   const R = 6371, toR = d => d * Math.PI / 180;
@@ -37,15 +38,6 @@ function nearestWilaya(lat, lng, canonicalList) {
   }
   return best;
 }
-
-const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
-  bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
-  muted: '#6B7280', border: '#E5E7EB',
-  success: '#10B981', successLight: '#ECFDF5',
-  error: '#EF4444', errorLight: '#FEF2F2',
-  warning: '#F59E0B', warningLight: '#FFFBEB',
-};
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const TOGGLE_SIDE_PAD = 32; // 16px each side
@@ -109,7 +101,7 @@ const SOUS_CATEGORIES = {
     { key: 'epicerie',       label: 'Produits alimentaires',       veh: 'utilitaire' },
     { key: 'vrac_alim',      label: 'Grande quantité',            veh: 'fourgon' },
     { key: 'surgeles',       label: 'Surgelés / Réfrigérés',      veh: 'fourgon',
-      warn: 'Les produits surgelés nécessitent un véhicule frigorifique. Mentionne cette exigence dans la description pour filtrer les transporteurs équipés.' },
+      warn: 'Les produits surgelés nécessitent un véhicule frigorifique. Mentionne cette exigence dans la description pour filtrer les chauffeurs équipés.' },
   ],
   materiaux: [
     { key: 'sable',     label: 'Sable / Gravier',   veh: 'camion10', warn: 'Le sable et gravier en vrac nécessitent un camion benne 10T minimum. Précise la quantité en tonnes.' },
@@ -119,19 +111,19 @@ const SOUS_CATEGORIES = {
     { key: 'autre_btp', label: 'Autre BTP',           veh: 'camion35' },
   ],
   vehicule: [
-    { key: 'voiture',   label: 'Voiture',            veh: 'semi', warn: 'Le transport de voitures nécessite un plateau ou semi-remorque équipé. Vérifie que le transporteur dispose du matériel adéquat.' },
+    { key: 'voiture',   label: 'Voiture',            veh: 'semi', warn: 'Le transport de voitures nécessite un plateau ou semi-remorque équipé. Vérifie que le chauffeur dispose du matériel adéquat.' },
     { key: 'moto',      label: 'Moto / Scooter',     veh: 'fourgon' },
-    { key: 'camion_l',  label: 'Camion léger',       veh: 'semi', warn: 'Pour les véhicules lourds, assure-toi que le transporteur possède un plateau homologué.' },
+    { key: 'camion_l',  label: 'Camion léger',       veh: 'semi', warn: 'Pour les véhicules lourds, assure-toi que le chauffeur possède un plateau homologué.' },
   ],
   autre: [],
 };
 
 const QUICK_CATS = [
-  { key: 'meubles',        label: 'Déménagement',     icon: 'grid-outline' },
+  { key: 'demenagement',   label: 'Déménagement',     icon: 'grid-outline' },
   { key: 'electromenager', label: 'Électroménager',   icon: 'tv-outline' },
-  { key: 'alimentation',   label: 'Fruits & Légumes', icon: 'basket-outline' },
+  { key: 'fruits_legumes', label: 'Fruits & Légumes', icon: 'basket-outline' },
   { key: 'materiaux',      label: 'Matériaux',        icon: 'construct-outline' },
-  { key: 'cartons',        label: 'Cartons',           icon: 'cube-outline' },
+  { key: 'marchandises',   label: 'Marchandises',     icon: 'cube-outline' },
 ];
 
 const VEH_LABELS = {
@@ -160,13 +152,13 @@ const VEH_EMOJI = {
 function Logo() {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <View style={ls.badge}><Text style={ls.dz}>Dz</Text></View>
-      <Text style={ls.express}>Express</Text>
+      <Text style={ls.express}>Route</Text>
+      <View style={ls.badge}><Text style={ls.dz}>X</Text></View>
     </View>
   );
 }
 const ls = StyleSheet.create({
-  badge:   { backgroundColor: C.accent, borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
+  badge:   { backgroundColor: '#D4A017', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 3 },
   dz:      { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
   express: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
 });
@@ -238,7 +230,7 @@ const suiviMiniHTML = (departLat, departLon, destLat, destLon, vehiculeEmoji) =>
  * pas un compteur local — cette mini-carte et l'écran de suivi complet
  * (bouton "Suivi complet") affichent donc toujours la même position.
  */
-function CourseEnCours({ demande, router }) {
+function CourseEnCours({ demande, router, onNouvelleCommande, onMasquer }) {
   const webviewRef = useRef(null);
   const [webviewReady, setWebviewReady]         = useState(false);
   const [distanceRestante, setDistanceRestante] = useState(null);
@@ -302,8 +294,8 @@ function CourseEnCours({ demande, router }) {
           <View style={[cec.statutDot, demande.statut === 'en_route' ? cec.dotVert : cec.dotOrange]} />
           <Text style={cec.statutTxt}>
             {demande.statut === 'acceptee'
-              ? '✅ Transporteur assigné — En attente de démarrage'
-              : '🚛 Votre transporteur est en route !'}
+              ? '✅ Chauffeur assigné — En attente de démarrage'
+              : '🚛 Votre chauffeur est en route !'}
           </Text>
         </View>
 
@@ -317,7 +309,7 @@ function CourseEnCours({ demande, router }) {
         <View style={cec.driverRow}>
           <View style={cec.avatar}><Text style={{ fontSize: 20 }}>{vehiculeEmoji}</Text></View>
           <View style={{ flex: 1 }}>
-            <Text style={cec.driverName}>{demande.transporteur_nom || 'Ton transporteur'}</Text>
+            <Text style={cec.driverName}>{demande.transporteur_nom || 'Ton chauffeur'}</Text>
             <Text style={cec.routeTxt} numberOfLines={1}>{demande.ville_depart} → {demande.ville_arrivee}</Text>
           </View>
         </View>
@@ -332,6 +324,16 @@ function CourseEnCours({ demande, router }) {
             <Text style={cec.chatBtnTxt}>Contacter</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Ne pas bloquer le client sur le suivi : il peut commander autre chose */}
+        <TouchableOpacity style={cec.newBtn} onPress={onNouvelleCommande} activeOpacity={0.88}>
+          <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={cec.chatBtnTxt}>Nouvelle commande</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={cec.homeLink} onPress={onMasquer} activeOpacity={0.7}>
+          <Ionicons name="home-outline" size={14} color={C.muted} style={{ marginRight: 5 }} />
+          <Text style={cec.homeLinkTxt}>Retour à l'accueil</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -366,8 +368,11 @@ const cec = StyleSheet.create({
 
   detailBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border, borderRadius: 50, paddingVertical: 14 },
   detailBtnTxt: { fontSize: 13, fontWeight: '800', color: C.text },
-  chatBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 14 },
+  chatBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 14 },
   chatBtnTxt:   { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+  newBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#D4A017', borderRadius: 50, paddingVertical: 14, marginTop: 10 },
+  homeLink:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
+  homeLinkTxt:  { fontSize: 13, fontWeight: '700', color: C.muted },
 });
 
 // ════════════════════════════════════════════════════════════
@@ -375,12 +380,15 @@ const cec = StyleSheet.create({
 // ════════════════════════════════════════════════════════════
 function ExpéditeurHome({ user }) {
   const router = useRouter();
-  const { setField, reset, setOption } = useReservation();
+  const { setField, reset } = useReservation();
+  const { logout } = useApp();
   const { t } = useLanguage();
 
   const [allDemandes, setAllDemandes] = useState([]);
   const [recentDemandes, setRecentDemandes] = useState([]);
   const [nbTransporteurs, setNbTransporteurs] = useState(0);
+  // id de la course active dont le suivi a été masqué (une nouvelle course réaffiche le suivi)
+  const [suiviMasque, setSuiviMasque] = useState(null);
 
   useEffect(() => {
     const refresh = () => {
@@ -408,53 +416,48 @@ function ExpéditeurHome({ user }) {
 
   // Course active → remplace tout l'écran d'accueil (voir CourseEnCours).
   const activeDemande = allDemandes.find(d => ['acceptee', 'en_route'].includes(d.statut)) || null;
-  if (activeDemande) return <CourseEnCours demande={activeDemande} router={router} />;
+  if (activeDemande && suiviMasque !== activeDemande.id) return (
+    <CourseEnCours
+      demande={activeDemande}
+      router={router}
+      onNouvelleCommande={() => { setSuiviMasque(activeDemande.id); reset(); router.push('/reservation/etape1'); }}
+      onMasquer={() => setSuiviMasque(activeDemande.id)}
+    />
+  );
 
   const refaire = (d) => {
     reset();
     setField('departure',  d.ville_depart);
     setField('arrival',    d.ville_arrivee);
     setField('categories', (d.type_marchandise || '').split(',').filter(Boolean));
-    setField('mode',       d.type_demande || 'planifie');
-    if (d.poids)       setField('quantite',    d.poids);
     if (d.description) setField('description', d.description);
     if (d.options_supplementaires) {
       try {
         const o = JSON.parse(d.options_supplementaires);
-        if (o.etages)  setOption('etages',  o.etages);
-        if (o.aide)    setOption('aide',    o.aide);
-        if (o.fragile) setOption('fragile', o.fragile);
-        if (o.express) setOption('express', o.express);
+        if (o.aide) setField('aideChargement', 1);
       } catch {}
     }
-    router.push('/reservation/recapitulatif');
+    router.push('/reservation/etape3');
   };
 
-  const _h        = new Date().getHours();
-  const salutation = _h >= 6 && _h < 18 ? t('bonjour') : t('bonsoir');
-  const prenom     = user.nom.split(' ')[0];
 
-  const lancerMaintenant = () => {
-    setField('mode', 'instantane');
-    router.push('/reservation/depart-arrivee');
-  };
-
-  const lancerPlanifie = () => {
-    setField('mode', 'planifie');
-    router.push('/reservation/depart-arrivee');
+  // Un seul profil par appareil : passer chauffeur = se déconnecter puis
+  // refaire l'onboarding en choisissant le rôle transporteur.
+  const devenirChauffeur = () => {
+    Alert.alert(
+      'Devenir chauffeur',
+      'Vous allez être déconnecté pour créer un compte chauffeur.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Continuer', onPress: () => { logout(); router.replace('/onboarding'); } },
+      ],
+    );
   };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[s.header, { flexDirection: 'column', alignItems: 'stretch', backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }]}>
-        <View style={hd.topRow}>
-          <Logo />
-          <View style={[s.headerBadge, { backgroundColor: '#FFF3E8', borderWidth: 1, borderColor: '#FDBA74' }]}>
-            <Ionicons name="cube-outline" size={13} color={C.accent} style={{ marginRight: 5 }} />
-            <Text style={[s.headerBadgeTxt, { color: C.accent }]}>Expéditeur</Text>
-          </View>
-        </View>
-        <Text style={hd.salutation}>{salutation}, {prenom}</Text>
+      <View style={[s.header, { backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }]}>
+        <Logo />
       </View>
 
       <ScrollView
@@ -470,31 +473,70 @@ function ExpéditeurHome({ user }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', borderRadius: 50, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#BBF7D0' }}>
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#16A34A', marginRight: 6 }} />
               <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803D' }}>
-                {nbTransporteurs} transporteur{nbTransporteurs > 1 ? 's' : ''} disponible{nbTransporteurs > 1 ? 's' : ''} près de vous
+                {nbTransporteurs} chauffeur{nbTransporteurs > 1 ? 's' : ''} disponible{nbTransporteurs > 1 ? 's' : ''} près de vous
               </Text>
             </View>
           )}
         </View>
 
-        {/* Bouton Maintenant */}
-        <TouchableOpacity style={nb.btnNoir} onPress={lancerMaintenant} activeOpacity={0.88}>
-          <Text style={nb.emoji}>🚀</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={nb.title}>{t('maintenant')}</Text>
-            <Text style={nb.sub}>Trouver un transporteur disponible maintenant</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+        {/* Course en cours masquée → raccourci pour revenir au suivi */}
+        {activeDemande && (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F2EC', borderRadius: 12, borderWidth: 1, borderColor: C.gold, padding: 12, marginBottom: 14 }}
+            activeOpacity={0.85}
+            onPress={() => setSuiviMasque(null)}
+          >
+            <Ionicons name="navigate-circle-outline" size={20} color={C.accent} style={{ marginRight: 8 }} />
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1}>
+              Course en cours · {activeDemande.ville_depart} → {activeDemande.ville_arrivee}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: C.accent }}>Suivre</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Bouton Commander */}
+        <TouchableOpacity
+          style={{ backgroundColor: C.accent, borderRadius: 14, paddingVertical: 20, alignItems: 'center', justifyContent: 'center' }}
+          activeOpacity={0.88}
+          onPress={() => { reset(); router.push('/reservation/etape1'); }}
+        >
+          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 18, letterSpacing: -0.2 }}>Commander</Text>
         </TouchableOpacity>
 
-        {/* Bouton Planifier */}
-        <TouchableOpacity style={nb.btnBlanc} onPress={lancerPlanifie} activeOpacity={0.88}>
-          <Text style={nb.emoji}>📅</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[nb.title, { color: '#0A0A0A' }]}>{t('planifier')}</Text>
-            <Text style={[nb.sub, { color: '#6B7280' }]}>Programmer une course pour plus tard</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#0A0A0A" />
+        {/* Lien chauffeur discret */}
+        <TouchableOpacity
+          style={{ alignSelf: 'flex-start', paddingVertical: 14, marginBottom: 12 }}
+          activeOpacity={0.7}
+          onPress={devenirChauffeur}
+        >
+          <Text style={{ color: C.accent, fontWeight: '600', fontSize: 14 }}>Je suis chauffeur →</Text>
         </TouchableOpacity>
+
+        {/* Transport rapide */}
+        <View style={qs.section}>
+          <Text style={qs.sectionTitle}>Transport rapide</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled keyboardShouldPersistTaps="handled"
+            contentContainerStyle={qs.row}>
+            {QUICK_CATS.map(cat => (
+              <TouchableOpacity
+                key={cat.key}
+                style={qs.card}
+                onPress={() => {
+                  reset();
+                  setField('categories', [cat.key]);
+                  router.push('/reservation/etape2');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={qs.iconBox}>
+                  <Ionicons name={cat.icon} size={26} color={C.accent} />
+                </View>
+                <Text style={qs.label}>{cat.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
         {/* Vos dernières demandes */}
         {recentDemandes.length > 0 && (
@@ -532,32 +574,6 @@ function ExpéditeurHome({ user }) {
             </ScrollView>
           </View>
         )}
-
-        {/* Transport rapide */}
-        <View style={qs.section}>
-          <Text style={qs.sectionTitle}>Transport rapide</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            nestedScrollEnabled keyboardShouldPersistTaps="handled"
-            contentContainerStyle={qs.row}>
-            {QUICK_CATS.map(cat => (
-              <TouchableOpacity
-                key={cat.key}
-                style={qs.card}
-                onPress={() => {
-                  reset();
-                  setField('categories', [cat.key]);
-                  router.push('/reservation/marchandise');
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={qs.iconBox}>
-                  <Ionicons name={cat.icon} size={26} color={C.accent} />
-                </View>
-                <Text style={qs.label}>{cat.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
 
         {/* Lien aide discret */}
         <TouchableOpacity style={s.aideLink} onPress={() => router.push('/aide')} activeOpacity={0.7}>
@@ -728,7 +744,7 @@ function TransporteurHome({ user }) {
             offresDB.accepter(offreId, demande.id, user.id);
             notifDB.create(
               demande.expediteur_id,
-              `Un transporteur a accepté votre course ${demande.ville_depart} → ${demande.ville_arrivee}`,
+              `Un chauffeur a accepté votre course ${demande.ville_depart} → ${demande.ville_arrivee}`,
               'course_acceptee',
               { route: `/demande/${demande.id}` }
             );
@@ -749,10 +765,6 @@ function TransporteurHome({ user }) {
       {/* Header */}
       <View style={s.header}>
         <Logo />
-        <View style={[s.headerBadge, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-          <Ionicons name="car-sport-outline" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-          <Text style={s.headerBadgeTxt}>Transporteur</Text>
-        </View>
       </View>
 
       {/* ── Toggle En ligne / Hors ligne ── */}
@@ -994,7 +1006,7 @@ function DemandeCard({ demande: d, onPress, onAccepter, showAccepter = false }) 
           <Text style={s.urgentBannerTxt}>URGENT — Transport immédiat</Text>
         </View>
       ) : countdown ? (
-        <View style={[s.urgentBanner, { backgroundColor: isProche ? '#FFF7ED' : '#F0FDF4', borderBottomColor: isProche ? '#FED7AA' : '#BBF7D0' }]}>
+        <View style={[s.urgentBanner, { backgroundColor: isProche ? '#E8F2EC' : '#F0FDF4', borderBottomColor: isProche ? '#E9D18A' : '#BBF7D0' }]}>
           <Ionicons name="alarm-outline" size={12} color={isProche ? C.accent : C.success} style={{ marginRight: 6 }} />
           <Text style={[s.urgentBannerTxt, { color: isProche ? C.accent : C.success }]}>{countdown}</Text>
         </View>
@@ -1065,7 +1077,7 @@ function DemandeCard({ demande: d, onPress, onAccepter, showAccepter = false }) 
           </View>
         )}
         {isProche && countdown && !isUrgent && (
-          <View style={[dc.timingPlan, { backgroundColor: C.accentLight, borderColor: '#FED7AA', marginLeft: 6 }]}>
+          <View style={[dc.timingPlan, { backgroundColor: C.accentLight, borderColor: '#E9D18A', marginLeft: 6 }]}>
             <Ionicons name="alarm-outline" size={12} color={C.accent} style={{ marginRight: 4 }} />
             <Text style={[dc.timingPlanTxt, { color: C.accent }]}>{countdown}</Text>
           </View>
@@ -1123,8 +1135,6 @@ const s = StyleSheet.create({
     paddingBottom: 18, paddingHorizontal: 20,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  headerBadge:    { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 50 },
-  headerBadgeTxt: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 
   urgFilterBar: { flexDirection: 'row', backgroundColor: C.bg, paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   urgBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 9, borderRadius: 10, backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border },
@@ -1182,7 +1192,7 @@ const s = StyleSheet.create({
   typeTxt:     { fontSize: 10, fontWeight: '600', color: C.muted, textAlign: 'center' },
 
 
-  submitBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, marginTop: 4 },
+  submitBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 17, marginTop: 4 },
   submitBtnTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   submitBtnSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11 },
 
@@ -1226,15 +1236,15 @@ const s = StyleSheet.create({
   prochSection:   { backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
   prochHeader:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
   prochTitle:     { fontSize: 14, fontWeight: '800', color: C.text, flex: 1 },
-  prochBadge:     { backgroundColor: C.accentLight, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: '#FED7AA' },
+  prochBadge:     { backgroundColor: C.accentLight, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: '#E9D18A' },
   prochBadgeTxt:  { fontSize: 11, fontWeight: '800', color: C.accent },
   prochCard:      { width: 200, backgroundColor: C.bgAlt, borderRadius: 12, padding: 12, borderWidth: 1.5, borderColor: C.border },
-  prochCdBadge:   { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 8, borderWidth: 1, borderColor: '#FED7AA' },
+  prochCdBadge:   { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 8, borderWidth: 1, borderColor: '#E9D18A' },
   prochCdTxt:     { fontSize: 11, fontWeight: '800' },
   prochRoute:     { fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 3 },
   prochDate:      { fontSize: 11, color: C.muted, fontWeight: '500', marginBottom: 4 },
   prochPrix:      { fontSize: 13, fontWeight: '700', color: C.success, marginBottom: 8 },
-  prochAccepterBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 20, paddingVertical: 8 },
+  prochAccepterBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 20, paddingVertical: 8 },
   prochAccepterTxt:  { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 });
 
@@ -1244,7 +1254,7 @@ const px = StyleSheet.create({
   title:      { fontSize: 13, fontWeight: '800', color: C.success, flex: 1 },
   surgeBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.errorLight, borderRadius: 50, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' },
   surgeTxt:   { fontSize: 11, fontWeight: '800', color: C.error },
-  surgeRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: 8, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#FED7AA' },
+  surgeRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: 8, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#E9D18A' },
   surgeLabel: { fontSize: 12, fontWeight: '700', color: C.accent },
   row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#A7F3D0' },
   vehTxt:     { fontSize: 13, color: C.text, fontWeight: '600' },
@@ -1273,7 +1283,7 @@ const vr = StyleSheet.create({
   cardSelected:{ borderColor: C.primary, borderWidth: 2 },
   cardLabel:   { fontSize: 11, fontWeight: '600', color: C.muted, textAlign: 'center' },
   recBadge:      { position: 'absolute', top: 6, right: 6, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
-  insuffisantBox:{ flexDirection: 'row', alignItems: 'center', marginTop: 10, backgroundColor: C.accentLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#FED7AA' },
+  insuffisantBox:{ flexDirection: 'row', alignItems: 'center', marginTop: 10, backgroundColor: C.accentLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#E9D18A' },
   insuffisantTxt:{ fontSize: 12, fontWeight: '700', color: C.accent, flex: 1 },
 });
 
@@ -1306,11 +1316,6 @@ const qs = StyleSheet.create({
   label:        { fontSize: 11, fontWeight: '700', color: C.text, textAlign: 'center' },
 });
 
-const hd = StyleSheet.create({
-  topRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  salutation: { fontSize: 14, color: '#6B7280', fontWeight: '400' },
-});
-
 const rd = StyleSheet.create({
   card:       { width: 162, backgroundColor: C.bg, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: C.border, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06 },
   routeRow:   { flexDirection: 'row', alignItems: 'center', gap: 7 },
@@ -1318,7 +1323,7 @@ const rd = StyleSheet.create({
   city:       { fontSize: 13, fontWeight: '700', color: C.text, flex: 1 },
   typeBadge:  { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },
   typeTxt:    { fontSize: 11, color: C.muted, fontWeight: '600' },
-  refaireBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 9, marginTop: 10 },
+  refaireBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 9, marginTop: 10 },
   refaireTxt: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 });
 
@@ -1371,17 +1376,8 @@ const dc = StyleSheet.create({
   prixBox:       { gap: 1 },
   prixLabel:     { fontSize: 10, fontWeight: '600', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 },
   prixVal:       { fontSize: 18, fontWeight: '900', color: C.accent, letterSpacing: -0.4 },
-  voirBtn:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
+  voirBtn:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accent, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
   voirTxt:       { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
   accepterBtn:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A56DB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
   accepterTxt:   { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
-});
-
-// ── Boutons Maintenant / Planifier ───────────────────────────
-const nb = StyleSheet.create({
-  btnNoir:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0A0A0A', borderRadius: 12, padding: 20, marginBottom: 12 },
-  btnBlanc: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 20, borderWidth: 1.5, borderColor: '#0A0A0A', marginBottom: 12 },
-  emoji:    { fontSize: 26, marginRight: 14, width: 34 },
-  title:    { fontSize: 17, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, marginBottom: 3 },
-  sub:      { fontSize: 13, color: 'rgba(255,255,255,0.55)', fontWeight: '400', lineHeight: 18 },
 });

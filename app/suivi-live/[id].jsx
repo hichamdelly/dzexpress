@@ -11,7 +11,7 @@ import { getCoordsVille, haversineDistance } from '../../src/utils/distance';
 import { calculerPositionSimulee } from '../../src/lib/simulationTrajet';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -214,7 +214,7 @@ export default function SuiviLiveScreen() {
       for (const seuil of [10, 5]) {
         if (distKm <= seuil && !seuilsAtteintsRef.current.has(seuil)) {
           seuilsAtteintsRef.current.add(seuil);
-          showBanner(`🚛 Votre transporteur est à ${seuil} km !`);
+          showBanner(`🚛 Votre chauffeur est à ${seuil} km !`);
         }
       }
 
@@ -292,7 +292,7 @@ export default function SuiviLiveScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={s.driverName}>{demande.transporteur_nom || 'Ton transporteur'}</Text>
+              <Text style={s.driverName}>{demande.transporteur_nom || 'Ton chauffeur'}</Text>
               {vehiculeLabel && !arrive && <Text style={s.vehiculeTag}>{vehiculeLabel}</Text>}
             </View>
             {arrive ? (
@@ -307,7 +307,7 @@ export default function SuiviLiveScreen() {
 
         <TouchableOpacity style={s.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.88}>
           <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={s.chatBtnTxt}>Contacter le transporteur</Text>
+          <Text style={s.chatBtnTxt}>Contacter le chauffeur</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -364,6 +364,6 @@ const s = StyleSheet.create({
   driverName:  { fontSize: 15, fontWeight: '800', color: C.text },
   vehiculeTag: { fontSize: 10, fontWeight: '700', color: C.muted, backgroundColor: C.bgAlt, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   updateTxt:   { fontSize: 12, color: C.muted, marginTop: 2 },
-  chatBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 15 },
+  chatBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 15 },
   chatBtnTxt: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 });

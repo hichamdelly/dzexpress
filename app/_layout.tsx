@@ -12,7 +12,6 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="onboarding" />
-          <Stack.Screen name="carte-transporteurs" />
           <Stack.Screen name="select-location" />
           <Stack.Screen name="demande/[id]" />
           <Stack.Screen name="course/[id]" />

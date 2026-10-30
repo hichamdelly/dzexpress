@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -16,12 +16,12 @@ const C = {
 
 const FAQ = [
   {
-    q: 'Comment fonctionne DzExpress ?',
-    a: 'DzExpress met en relation des expéditeurs (qui ont une marchandise à envoyer) et des transporteurs (qui ont un véhicule disponible). Publiez une demande, recevez des offres, choisissez votre transporteur et suivez votre livraison en temps réel.',
+    q: 'Comment fonctionne RouteX ?',
+    a: 'RouteX met en relation des expéditeurs (qui ont une marchandise à envoyer) et des chauffeurs (qui ont un véhicule disponible). Publiez une demande, recevez des offres, choisissez votre chauffeur et suivez votre livraison en temps réel.',
   },
   {
-    q: 'Comment réserver un transporteur ?',
-    a: "Depuis l'onglet Accueil, choisissez le mode \"Maintenant\" pour choisir un transporteur directement sur la carte, ou \"Planifié\" pour publier votre demande et recevoir des offres de plusieurs transporteurs.",
+    q: 'Comment réserver un chauffeur ?',
+    a: "Depuis l'onglet Accueil, choisissez le mode \"Maintenant\" pour choisir un chauffeur directement sur la carte, ou \"Planifié\" pour publier votre demande et recevoir des offres de plusieurs chauffeurs.",
   },
   {
     q: 'Comment annuler une course ?',
@@ -29,10 +29,10 @@ const FAQ = [
   },
   {
     q: 'Comment payer ?',
-    a: "Le paiement s'effectue directement entre expéditeur et transporteur à la livraison (espèces). Le paiement électronique (CIB / Edahabia) sera disponible prochainement.",
+    a: "Le paiement s'effectue directement entre expéditeur et chauffeur à la livraison (espèces). Le paiement électronique (CIB / Edahabia) sera disponible prochainement.",
   },
   {
-    q: "Que faire si mon transporteur n'arrive pas ?",
+    q: "Que faire si mon chauffeur n'arrive pas ?",
     a: "Contactez-le via le chat de la demande. S'il ne répond pas sous 15 minutes, annulez la course sans pénalité et signalez le problème via le formulaire ci-dessous. Notre équipe interviendra sous 24h.",
   },
   {
@@ -40,8 +40,8 @@ const FAQ = [
     a: 'Utilisez le formulaire "Signaler un problème" en bas de cet écran, ou appelez directement notre support au +213 555 000 111. Nous traitons chaque signalement sous 24h.',
   },
   {
-    q: 'Comment devenir transporteur ?',
-    a: "Lors de l'inscription, sélectionnez le rôle \"Transporteur\" et renseignez les informations de votre véhicule. Vous pourrez ensuite voir et accepter des demandes de livraison dans votre zone.",
+    q: 'Comment devenir chauffeur ?',
+    a: "Lors de l'inscription, sélectionnez le rôle \"Chauffeur\" et renseignez les informations de votre véhicule. Vous pourrez ensuite voir et accepter des demandes de livraison dans votre zone.",
   },
   {
     q: 'Comment modifier mon profil ?',
@@ -76,7 +76,7 @@ export default function AideScreen() {
     );
 
   const emailSupport = () =>
-    Linking.openURL('mailto:dzexpress.support@gmail.com?subject=Demande%20support%20DzExpress').catch(() =>
+    Linking.openURL('mailto:dzexpress.support@gmail.com?subject=Demande%20support%20RouteX').catch(() =>
       Alert.alert('Erreur', 'Impossible d\'ouvrir l\'application email.')
     );
 
@@ -136,7 +136,7 @@ export default function AideScreen() {
             <Ionicons name="chevron-forward" size={16} color="#1D4ED8" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[s.contactBtn, { backgroundColor: C.accentLight, borderColor: '#FED7AA' }]} onPress={emailSupport} activeOpacity={0.85}>
+          <TouchableOpacity style={[s.contactBtn, { backgroundColor: C.accentLight, borderColor: '#E9D18A' }]} onPress={emailSupport} activeOpacity={0.85}>
             <Ionicons name="mail-outline" size={18} color={C.accent} style={{ marginRight: 10 }} />
             <View style={{ flex: 1 }}>
               <Text style={[s.contactBtnTitle, { color: C.accent }]}>Envoyer un email</Text>

@@ -67,7 +67,7 @@ export default function AdminDocuments() {
   };
 
   const handleValider = (u) => {
-    Alert.alert(`Valider le dossier de ${u.nom} ?`, 'Ce transporteur pourra accéder à toutes les fonctionnalités.', [
+    Alert.alert(`Valider le dossier de ${u.nom} ?`, 'Ce chauffeur pourra accéder à toutes les fonctionnalités.', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Valider le dossier', style: 'default',
@@ -142,7 +142,7 @@ export default function AdminDocuments() {
             <Text style={s.docTitle}>Documents requis</Text>
             {DOCS_REQUIS.map(doc => <DocItem key={doc.key} doc={doc} />)}
             <Text style={s.docNote}>
-              Les transporteurs doivent soumettre leurs documents via l'application.
+              Les chauffeurs doivent soumettre leurs documents via l'application.
               Vérifie les documents reçus avant de valider.
             </Text>
           </View>
@@ -185,7 +185,7 @@ export default function AdminDocuments() {
       <View style={s.header}>
         <View>
           <Text style={s.headerTitle}>Documents</Text>
-          <Text style={s.headerSub}>Validation des dossiers transporteurs</Text>
+          <Text style={s.headerSub}>Validation des dossiers chauffeurs</Text>
         </View>
         <View style={[s.pendingBig, { backgroundColor: C.warning + '18' }]}>
           <Text style={[s.pendingBigTxt, { color: C.warning }]}>{counts.en_attente}</Text>
@@ -221,7 +221,7 @@ export default function AdminDocuments() {
           <View style={s.empty}>
             <Ionicons name="document-text-outline" size={44} color="#D1D5DB" />
             <Text style={s.emptyTxt}>
-              {filtre === 'en_attente' ? 'Aucun dossier en attente' : 'Aucun transporteur dans cette catégorie'}
+              {filtre === 'en_attente' ? 'Aucun dossier en attente' : 'Aucun chauffeur dans cette catégorie'}
             </Text>
           </View>
         )}

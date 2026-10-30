@@ -111,7 +111,7 @@ export function AppProvider({ children }) {
             demandesDB.markAutoAccepted(d.id);
             notifDB.create(
               d.expediteur_id,
-              `Un transporteur a accepté votre course ${d.ville_depart} → ${d.ville_arrivee}`,
+              `Un chauffeur a accepté votre course ${d.ville_depart} → ${d.ville_arrivee}`,
               'course_acceptee',
               { route: `/demande/${d.id}` }
             );

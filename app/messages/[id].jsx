@@ -13,8 +13,8 @@ const C = {
   blue:        '#1A56DB',
   blueLight:   '#EBF5FF',
   blueDark:    '#1E40AF',
-  orange:      '#F97316',
-  orangeLight: '#FFF7ED',
+  orange:      '#0F4D2E',
+  orangeLight: '#E8F2EC',
   bg:          '#F8FAFC',
   white:       '#FFFFFF',
   text:        '#1E293B',
@@ -53,7 +53,7 @@ export default function ChatScreen() {
   }, [id]);
 
   const otherName = isExpéditeur
-    ? (demande?.transporteur_nom || 'Transporteur')
+    ? (demande?.transporteur_nom || 'Chauffeur')
     : (demande?.expediteur_nom  || 'Expéditeur');
 
   // ── Bannière nouveau message ─────────────────────────────────

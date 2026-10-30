@@ -8,17 +8,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../src/context/AppContext';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981',
   bot: '#1A56DB', botLight: '#EBF5FF',
 };
 
-const BOT_NAME  = 'Support DzExpress';
+const BOT_NAME  = 'Support RouteX';
 const BOT_DELAY = 900; // ms
 
-const WELCOME = "Bonjour ! Je suis l'assistant DzExpress. Comment puis-je vous aider aujourd'hui ?";
+const WELCOME = "Bonjour ! Je suis l'assistant RouteX. Comment puis-je vous aider aujourd'hui ?";
 
 const REPONSES_AUTO = [
   {
@@ -27,11 +27,11 @@ const REPONSES_AUTO = [
   },
   {
     mots: ['pay', 'prix', 'tarif', 'cost', 'combien', 'da', 'argent'],
-    texte: "Le paiement s'effectue en espèces directement au transporteur à la livraison. Le paiement électronique (CIB/Edahabia) sera disponible bientôt. Le prix est calculé automatiquement selon la distance et le type de véhicule.",
+    texte: "Le paiement s'effectue en espèces directement au chauffeur à la livraison. Le paiement électronique (CIB/Edahabia) sera disponible bientôt. Le prix est calculé automatiquement selon la distance et le type de véhicule.",
   },
   {
     mots: ['transport', 'chauffeur', 'camion', 'fourgon', 'trouver', 'dispo'],
-    texte: "Pour trouver un transporteur : depuis l'accueil, choisissez \"Maintenant\" pour voir les transporteurs disponibles sur la carte, ou \"Planifié\" pour publier votre demande et recevoir plusieurs offres.",
+    texte: "Pour trouver un chauffeur : depuis l'accueil, choisissez \"Maintenant\" pour voir les chauffeurs disponibles sur la carte, ou \"Planifié\" pour publier votre demande et recevoir plusieurs offres.",
   },
   {
     mots: ['problem', 'probl', 'bug', 'erreur', 'signaler', 'plaindre'],
@@ -39,7 +39,7 @@ const REPONSES_AUTO = [
   },
   {
     mots: ['inscr', 'creer', 'compte', 'nouveau', 'register'],
-    texte: "Pour créer un compte, lancez l'application et suivez les 3 étapes d'inscription : choisissez votre rôle (Expéditeur ou Transporteur), renseignez vos informations, puis vérifiez votre numéro.",
+    texte: "Pour créer un compte, lancez l'application et suivez les 3 étapes d'inscription : choisissez votre rôle (Expéditeur ou Chauffeur), renseignez vos informations, puis vérifiez votre numéro.",
   },
   {
     mots: ['profil', 'modif', 'nom', 'tel', 'wilaya', 'vehicule'],
@@ -47,7 +47,7 @@ const REPONSES_AUTO = [
   },
   {
     mots: ['note', 'avis', 'evaluat', 'star', 'etoile'],
-    texte: "La notation se fait après chaque livraison. Donnez une note de 1 à 5 étoiles et un commentaire. Les transporteurs avec une note > 4,5 bénéficient d'une commission réduite de 10%.",
+    texte: "La notation se fait après chaque livraison. Donnez une note de 1 à 5 étoiles et un commentaire. Les chauffeurs avec une note > 4,5 bénéficient d'une commission réduite de 10%.",
   },
 ];
 
@@ -96,7 +96,7 @@ export default function SupportChatScreen() {
     }, BOT_DELAY);
   };
 
-  const SUGGESTIONS = ['Annuler une course', 'Modes de paiement', 'Trouver un transporteur', 'Signaler un problème'];
+  const SUGGESTIONS = ['Annuler une course', 'Modes de paiement', 'Trouver un chauffeur', 'Signaler un problème'];
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -231,6 +231,6 @@ const s = StyleSheet.create({
 
   inputBar:        { flexDirection: 'row', alignItems: 'flex-end', padding: 12, paddingBottom: Platform.OS === 'ios' ? 28 : 12, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border, gap: 10 },
   input:           { flex: 1, backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: C.text, maxHeight: 100 },
-  sendBtn:         { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  sendBtn:         { width: 44, height: 44, borderRadius: 22, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   sendBtnDisabled: { backgroundColor: '#9CA3AF' },
 });

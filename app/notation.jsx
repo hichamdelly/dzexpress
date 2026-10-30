@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -45,7 +45,7 @@ export default function NotationScreen() {
         <Ionicons name="star" size={36} color={C.star} />
       </View>
       <Text style={s.successTitle}>Merci pour ta note !</Text>
-      <Text style={s.successSub}>Ton avis aide la communauté DzExpress à s'améliorer.</Text>
+      <Text style={s.successSub}>Ton avis aide la communauté RouteX à s'améliorer.</Text>
       <TouchableOpacity style={s.doneBtn} onPress={() => router.replace('/(tabs)')}>
         <Text style={s.doneBtnTxt}>Retour à l'accueil</Text>
       </TouchableOpacity>
@@ -165,7 +165,7 @@ const s = StyleSheet.create({
 
   input: { backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: C.text, minHeight: 100, marginBottom: 24 },
 
-  submitBtn:    { backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2 },
+  submitBtn:    { backgroundColor: C.accent, borderRadius: 50, paddingVertical: 17, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2 },
   submitBtnTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   btnDisabled:  { opacity: 0.4 },
 
@@ -175,6 +175,6 @@ const s = StyleSheet.create({
   successIcon:  { width: 88, height: 88, borderRadius: 44, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   successTitle: { fontSize: 26, fontWeight: '700', color: C.text, marginBottom: 10, textAlign: 'center' },
   successSub:   { fontSize: 15, color: C.muted, textAlign: 'center', lineHeight: 22, marginBottom: 36 },
-  doneBtn:      { backgroundColor: C.primary, borderRadius: 50, paddingVertical: 16, paddingHorizontal: 52, alignItems: 'center' },
+  doneBtn:      { backgroundColor: C.accent, borderRadius: 50, paddingVertical: 16, paddingHorizontal: 52, alignItems: 'center' },
   doneBtnTxt:   { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });

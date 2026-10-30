@@ -1,6 +1,6 @@
 export default {
   // Général
-  app_name: 'دز إكسبريس',
+  app_name: 'روت إكس',
   slogan: 'النقل. ببساطة.',
   suivant: 'التالي',
   retour: 'رجوع',

@@ -19,7 +19,7 @@ import { registerPicker } from '../lib/locationPicker';
  *
  * Props : value, onChange, onSelect, placeholder, accentColor
  */
-export default function CityInput({ placeholder, value, onSelect, onChange, accentColor = '#F97316' }) {
+export default function CityInput({ placeholder, value, onSelect, onChange, accentColor = '#0F4D2E' }) {
   const router = useRouter();
   const [query,        setQuery]        = useState(value || '');
   const [modalVisible, setModalVisible] = useState(false);
@@ -255,7 +255,7 @@ const s = StyleSheet.create({
   },
   itemIcon: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#FFF7ED',
+    backgroundColor: '#E8F2EC',
     alignItems: 'center', justifyContent: 'center',
   },
   itemCommune: { fontSize: 15, fontWeight: '600', color: '#0A0A0A' },

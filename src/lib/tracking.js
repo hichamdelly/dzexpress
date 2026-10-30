@@ -79,7 +79,7 @@ export async function demarrerTrackingGPS(demandeId) {
         distanceInterval: 0,
         showsBackgroundLocationIndicator: true,
         foregroundService: {
-          notificationTitle: 'DzExpress - Course en cours',
+          notificationTitle: 'RouteX - Course en cours',
           notificationBody: "Votre position est partagée avec l'expéditeur",
         },
       });

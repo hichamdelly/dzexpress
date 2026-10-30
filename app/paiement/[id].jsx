@@ -11,7 +11,7 @@ import { fmtPrix, calculerPrix, TARIFS_BASE } from '../../src/utils/pricing';
 import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -93,7 +93,7 @@ export default function PaiementScreen() {
         );
       }
       load();
-      Alert.alert('Paiement confirmé', 'Le transporteur a été notifié.');
+      Alert.alert('Paiement confirmé', 'Le chauffeur a été notifié.');
     } catch (e) {
       Alert.alert('Erreur', e.message);
     } finally {
@@ -162,8 +162,8 @@ export default function PaiementScreen() {
 
           {gain && (
             <View style={s.splitRow}>
-              <Text style={s.splitTxt}>Part transporteur : {fmtPrix(gain.montant)}</Text>
-              <Text style={s.splitTxt}>Commission DzExpress : {fmtPrix(gain.commission)}</Text>
+              <Text style={s.splitTxt}>Part chauffeur : {fmtPrix(gain.montant)}</Text>
+              <Text style={s.splitTxt}>Commission RouteX : {fmtPrix(gain.commission)}</Text>
             </View>
           )}
         </View>
@@ -211,7 +211,7 @@ export default function PaiementScreen() {
           <View style={s.infoBox}>
             <Ionicons name="information-circle" size={18} color="#1A56DB" style={{ marginRight: 10 }} />
             <Text style={s.infoTxt}>
-              Prépare {fmtPrix(total)} en espèces à remettre au transporteur.
+              Prépare {fmtPrix(total)} en espèces à remettre au chauffeur.
               Il confirmera la réception depuis son écran de course.
             </Text>
           </View>
@@ -220,7 +220,7 @@ export default function PaiementScreen() {
         {/* BaridiMob */}
         {mode === 'baridimob' && !confirme && (
           <View style={s.card}>
-            <Text style={s.sectionTitle}>Coordonnées BaridiMob du transporteur</Text>
+            <Text style={s.sectionTitle}>Coordonnées BaridiMob du chauffeur</Text>
             {transporteur?.ccp_numero ? (
               <View style={s.ccpBox}>
                 <View style={s.ccpRow}>
@@ -238,7 +238,7 @@ export default function PaiementScreen() {
               <View style={s.warningBox}>
                 <Ionicons name="warning" size={16} color={C.warning} style={{ marginRight: 8 }} />
                 <Text style={s.warningTxt}>
-                  Le transporteur n&rsquo;a pas encore renseigné ses coordonnées BaridiMob. Contacte-le avant de payer.
+                  Le chauffeur n&rsquo;a pas encore renseigné ses coordonnées BaridiMob. Contacte-le avant de payer.
                 </Text>
               </View>
             )}
@@ -320,6 +320,6 @@ const s = StyleSheet.create({
   fieldLabel: { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
   input: { backgroundColor: C.bgAlt, borderWidth: 1.5, borderColor: C.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.text },
 
-  confirmBtn:    { marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 15 },
+  confirmBtn:    { marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 15 },
   confirmBtnTxt: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 });

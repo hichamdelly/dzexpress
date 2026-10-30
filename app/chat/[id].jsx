@@ -18,7 +18,7 @@ import { playNotifSound } from '../../src/utils/sound';
 const MAX_REC_SECS = 120;
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -63,7 +63,7 @@ export default function ChatScreen() {
   }, [id]);
 
   const otherName = user?.type === 'expediteur'
-    ? (demande?.transporteur_nom || 'Transporteur')
+    ? (demande?.transporteur_nom || 'Chauffeur')
     : (demande?.expediteur_nom   || 'Expéditeur');
 
   useEffect(() => () => {
@@ -474,6 +474,6 @@ const s = StyleSheet.create({
   recProgress:  { fontSize: 11, color: C.muted, flex: 1 },
   micBtn:       { width: 44, height: 44, borderRadius: 22, backgroundColor: C.bgAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border },
   micBtnActive: { backgroundColor: C.errorLight, borderColor: '#FECACA' },
-  sendBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
+  sendBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
   sendDisabled: { opacity: 0.35 },
 });

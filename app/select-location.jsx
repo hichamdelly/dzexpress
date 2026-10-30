@@ -78,7 +78,7 @@ const mapHTML = (latitude, longitude) => `
 export default function SelectLocationScreen() {
   const router = useRouter();
   const { pickId, accentColor } = useLocalSearchParams();
-  const accent = accentColor || '#F97316';
+  const accent = accentColor || '#0F4D2E';
 
   const [initializing, setInitializing] = useState(true);
   const [initialCoords, setInitialCoords] = useState(null);

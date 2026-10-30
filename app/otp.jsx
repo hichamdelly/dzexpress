@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 const CODE_LEN = 4;
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -153,7 +153,7 @@ const s = StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   errorTxt: { color: C.error, fontSize: 13, fontWeight: '600' },
 
-  verifyBtn:    { width: '100%', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 17, alignItems: 'center', marginTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
+  verifyBtn:    { width: '100%', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 17, alignItems: 'center', marginTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
   verifyBtnTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 
   resendBtn: { marginTop: 18, paddingVertical: 8 },

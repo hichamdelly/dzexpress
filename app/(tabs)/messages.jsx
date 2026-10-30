@@ -10,7 +10,7 @@ import { useApp } from '../../src/context/AppContext';
 import { messagesDB } from '../../src/db/database';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', error: '#EF4444',
@@ -60,7 +60,7 @@ export default function MessagesScreen() {
 
   const renderConv = ({ item: conv }) => {
     const otherName = isExpéditeur
-      ? (conv.transporteur_nom || 'Transporteur')
+      ? (conv.transporteur_nom || 'Chauffeur')
       : conv.expediteur_nom;
     const initials  = otherName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
     const hasUnread = conv.nb_unread > 0;

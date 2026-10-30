@@ -1,6 +1,6 @@
 export default {
   // Général
-  app_name: 'DzExpress',
+  app_name: 'RouteX',
   slogan: 'Transportez. Simplement.',
   suivant: 'Suivant',
   retour: 'Retour',
@@ -13,7 +13,7 @@ export default {
   connexion: 'Connexion',
   inscription: "S'inscrire",
   expediteur: 'Expéditeur',
-  transporteur: 'Transporteur',
+  transporteur: 'Chauffeur',
 
   // Accueil
   bonjour: 'Bonjour',
@@ -80,7 +80,7 @@ export default {
   // Notifications
   nouvelle_demande: 'Nouvelle demande disponible',
   course_acceptee: 'Course acceptée',
-  transporteur_en_route: 'Votre transporteur est en route',
+  transporteur_en_route: 'Votre chauffeur est en route',
   livraison_arrivee: 'Votre livraison est arrivée',
 
   // Erreurs

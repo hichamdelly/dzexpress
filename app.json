@@ -1,20 +1,23 @@
 {
   "expo": {
-    "name": "DzExpress",
+    "name": "RouteX",
     "slug": "DzExpress",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "dzexpress",
     "userInterfaceStyle": "automatic",
+    "updates": {
+      "enabled": false
+    },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "DzExpress utilise ta position pour centrer la carte pendant tes livraisons.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "DzExpress utilise ta position pour le suivi des livraisons.",
-        "NSMicrophoneUsageDescription": "DzExpress peut utiliser le micro pour les messages vocaux.",
-        "NSPhotoLibraryUsageDescription": "DzExpress accède à ta galerie pour joindre des photos à tes livraisons.",
-        "NSCameraUsageDescription": "DzExpress utilise la caméra pour prendre des photos de livraison."
+        "NSLocationWhenInUseUsageDescription": "RouteX utilise ta position pour centrer la carte pendant tes livraisons.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RouteX utilise ta position pour le suivi des livraisons.",
+        "NSMicrophoneUsageDescription": "RouteX peut utiliser le micro pour les messages vocaux.",
+        "NSPhotoLibraryUsageDescription": "RouteX accède à ta galerie pour joindre des photos à tes livraisons.",
+        "NSCameraUsageDescription": "RouteX utilise la caméra pour prendre des photos de livraison."
       }
     },
     "android": {
@@ -34,8 +37,11 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.CAMERA"
-      ]
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "package": "com.hdellys.DzExpress"
     },
     "web": {
       "output": "static",
@@ -61,32 +67,38 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "DzExpress peut utiliser le micro pour les messages vocaux."
+          "microphonePermission": "RouteX peut utiliser le micro pour les messages vocaux."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "DzExpress accède à ta galerie pour joindre des photos.",
-          "cameraPermission": "DzExpress utilise la caméra pour les photos de livraison."
+          "photosPermission": "RouteX accède à ta galerie pour joindre des photos.",
+          "cameraPermission": "RouteX utilise la caméra pour les photos de livraison."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "DzExpress utilise ta position pour centrer la carte pendant tes livraisons.",
-          "locationAlwaysAndWhenInUsePermission": "DzExpress utilise ta position pour le suivi des livraisons.",
+          "locationWhenInUsePermission": "RouteX utilise ta position pour centrer la carte pendant tes livraisons.",
+          "locationAlwaysAndWhenInUsePermission": "RouteX utilise ta position pour le suivi des livraisons.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-task-manager",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {}
     }
   }
 }

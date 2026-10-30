@@ -13,7 +13,7 @@ import { fmtKm } from '../../src/utils/wilayas';
 import { getDistanceKmPrecise as getDistanceKm } from '../../src/utils/distance';
 
 const C = {
-  primary: '#0A0A0A', accent: '#F97316', accentLight: '#FFF3E8',
+  primary: '#0A0A0A', accent: '#0F4D2E', accentLight: '#E8F2EC',
   bg: '#FFFFFF', bgAlt: '#F5F5F5', text: '#0A0A0A',
   muted: '#6B7280', border: '#E5E7EB',
   success: '#10B981', successLight: '#ECFDF5',
@@ -22,8 +22,8 @@ const C = {
 };
 
 const STATUTS = {
-  en_attente: { label: 'En attente',  color: C.warning, bg: C.warningLight, icon: 'time-outline',            desc: 'Ta demande est visible par tous les transporteurs.' },
-  acceptee:   { label: 'Acceptée',    color: '#1A56DB', bg: '#EBF5FF',      icon: 'checkmark-circle-outline', desc: 'Un transporteur a accepté ta demande. Contacte-le !' },
+  en_attente: { label: 'En attente',  color: C.warning, bg: C.warningLight, icon: 'time-outline',            desc: 'Ta demande est visible par tous les chauffeurs.' },
+  acceptee:   { label: 'Acceptée',    color: '#1A56DB', bg: '#EBF5FF',      icon: 'checkmark-circle-outline', desc: 'Un chauffeur a accepté ta demande. Contacte-le !' },
   en_cours:   { label: 'En cours',    color: C.accent,  bg: C.accentLight,  icon: 'car-sport-outline',        desc: 'Ton colis est en route vers la destination.' },
   livree:     { label: 'Livrée',      color: C.success, bg: C.successLight, icon: 'cube-outline',             desc: 'Ta marchandise a été livrée.' },
   annulee:    { label: 'Annulée',     color: C.error,   bg: C.errorLight,   icon: 'close-circle-outline',     desc: 'Cette demande a été annulée.' },
@@ -105,9 +105,9 @@ export default function DetailDemandeScreen() {
     const isGratuite = demande.statut === 'acceptee' && timeLeft !== null && timeLeft > 0;
     Alert.alert('Annuler la demande ?',
       demande.statut === 'acceptee'
-        ? isGratuite ? 'Annulation gratuite — le transporteur sera notifié.'
-          : 'Le délai gratuit est dépassé. Le transporteur sera notifié.'
-        : 'Elle ne sera plus visible par les transporteurs.',
+        ? isGratuite ? 'Annulation gratuite — le chauffeur sera notifié.'
+          : 'Le délai gratuit est dépassé. Le chauffeur sera notifié.'
+        : 'Elle ne sera plus visible par les chauffeurs.',
       [
         { text: 'Non', style: 'cancel' },
         { text: 'Annuler', style: 'destructive', onPress: () => {
@@ -298,7 +298,7 @@ export default function DetailDemandeScreen() {
           <TouchableOpacity style={cs.contactBtn} onPress={() => router.push(`/chat/${demande.id}`)}>
             <Ionicons name="chatbubble-ellipses" size={18} color={C.success} style={{ marginRight: 8 }} />
             <Text style={cs.contactBtnTxt}>
-              Contacter le transporteur{msgUnread > 0 ? ` · ${msgUnread} non lu${msgUnread > 1 ? 's' : ''}` : ''}
+              Contacter le chauffeur{msgUnread > 0 ? ` · ${msgUnread} non lu${msgUnread > 1 ? 's' : ''}` : ''}
             </Text>
             {msgUnread > 0 && (
               <View style={cs.badge}><Text style={cs.badgeTxt}>{msgUnread > 9 ? '9+' : msgUnread}</Text></View>
@@ -309,14 +309,14 @@ export default function DetailDemandeScreen() {
         {demande.statut === 'en_attente' && (
           <View style={cs.infoBar}>
             <Ionicons name="lock-closed-outline" size={13} color={C.muted} style={{ marginRight: 7 }} />
-            <Text style={cs.infoBarTxt}>Les coordonnées du transporteur seront disponibles après acceptation</Text>
+            <Text style={cs.infoBarTxt}>Les coordonnées du chauffeur seront disponibles après acceptation</Text>
           </View>
         )}
 
         {/* Transporteur assigné */}
         {demande.transporteur_nom && (
           <View style={[s.card, { borderColor: C.success, borderWidth: 1.5 }]}>
-            <SectionTitle icon="car-sport-outline">Transporteur assigné</SectionTitle>
+            <SectionTitle icon="car-sport-outline">Chauffeur assigné</SectionTitle>
             <View style={s.transporteurBlock}>
               <View style={s.transporteurAvatar}>
                 <Text style={s.transporteurAvatarTxt}>
@@ -349,7 +349,7 @@ export default function DetailDemandeScreen() {
           <View style={s.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
               <Ionicons name="chatbubble-outline" size={16} color={C.text} style={{ marginRight: 8 }} />
-              <Text style={s.cardTitle}>Offres des transporteurs</Text>
+              <Text style={s.cardTitle}>Offres des chauffeurs</Text>
               {offres.length > 0 && (
                 <View style={s.countBadge}><Text style={s.countBadgeTxt}>{offres.length}</Text></View>
               )}
@@ -359,7 +359,7 @@ export default function DetailDemandeScreen() {
               <View style={{ alignItems: 'center', paddingVertical: 24 }}>
                 <View style={s.emptyOffreIcon}><Ionicons name="time-outline" size={28} color="#D1D5DB" /></View>
                 <Text style={{ fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20 }}>
-                  En attente des offres des transporteurs…{'\n'}Reviens dans quelques minutes.
+                  En attente des offres des chauffeurs…{'\n'}Reviens dans quelques minutes.
                 </Text>
               </View>
             ) : (
@@ -409,7 +409,7 @@ export default function DetailDemandeScreen() {
                     <View style={[offreStyles.contreBadge, { backgroundColor: '#EBF5FF', borderColor: '#BFDBFE' }]}>
                       <Ionicons name="swap-horizontal-outline" size={12} color="#1A56DB" style={{ marginRight: 5 }} />
                       <Text style={[offreStyles.contreTxt, { color: '#1A56DB' }]}>
-                        Contre-offre du transporteur : {fmtPrix(offre.contre_prix)}
+                        Contre-offre du chauffeur : {fmtPrix(offre.contre_prix)}
                       </Text>
                     </View>
                   )}
@@ -500,7 +500,7 @@ export default function DetailDemandeScreen() {
             const t = JSON.parse(demande.transporteur_simule);
             return (
               <View style={[s.card, { borderColor: C.success, borderWidth: 1.5 }]}>
-                <SectionTitle icon="car-sport-outline">Transporteur (mode Maintenant)</SectionTitle>
+                <SectionTitle icon="car-sport-outline">Chauffeur (mode Maintenant)</SectionTitle>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, marginBottom: 4 }}>{t.nom}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                   <Ionicons name="star" size={13} color="#F59E0B" style={{ marginRight: 4 }} />
@@ -560,7 +560,7 @@ function AnnulationsBadge({ count }) {
   if (count <= 2) return null;
   const rouge = count > 5;
   return (
-    <View style={[ab.badge, rouge ? { backgroundColor: C.errorLight, borderColor: '#FCA5A5' } : { backgroundColor: C.accentLight, borderColor: '#FED7AA' }]}>
+    <View style={[ab.badge, rouge ? { backgroundColor: C.errorLight, borderColor: '#FCA5A5' } : { backgroundColor: C.accentLight, borderColor: '#E9D18A' }]}>
       <Ionicons name="alert-circle-outline" size={11} color={rouge ? C.error : C.accent} style={{ marginRight: 3 }} />
       <Text style={[ab.txt, { color: rouge ? C.error : C.accent }]}>
         {count} annulation{count > 1 ? 's' : ''}{rouge ? ' · Peu fiable' : ''}
@@ -670,9 +670,9 @@ const offreStyles = StyleSheet.create({
   acceptedTxt:   { fontSize: 12, fontWeight: '700', color: C.success },
   prix:          { fontSize: 22, fontWeight: '900', color: C.primary, marginBottom: 6 },
   message:       { fontSize: 13, color: C.muted, fontStyle: 'italic', marginBottom: 10, lineHeight: 19 },
-  acceptBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary, borderRadius: 50, paddingVertical: 13, marginTop: 4 },
+  acceptBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent, borderRadius: 50, paddingVertical: 13, marginTop: 4 },
   acceptBtnTxt:  { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  contreBadge:   { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.accentLight, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#FED7AA', marginBottom: 6 },
+  contreBadge:   { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.accentLight, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#E9D18A', marginBottom: 6 },
   contreTxt:     { fontSize: 12, fontWeight: '700', color: C.accent, lineHeight: 18, flex: 1 },
   contreBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.accent, borderRadius: 50, paddingVertical: 10, marginTop: 6 },
   contreBtnTxt:  { fontSize: 13, fontWeight: '700', color: C.accent },
@@ -691,7 +691,7 @@ const ps = StyleSheet.create({
   finalTxt:   { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
   range:      { fontSize: 22, fontWeight: '900', color: C.primary, marginBottom: 4 },
   final:      { fontSize: 14, fontWeight: '700', color: C.success },
-  surgeChip:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: 8, padding: 7, borderWidth: 1, borderColor: '#FED7AA', marginBottom: 6, alignSelf: 'flex-start' },
+  surgeChip:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: 8, padding: 7, borderWidth: 1, borderColor: '#E9D18A', marginBottom: 6, alignSelf: 'flex-start' },
   surgeTxt:   { fontSize: 12, fontWeight: '700', color: C.accent },
   detailBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 8 },
   detailBtnTxt: { fontSize: 12, fontWeight: '700', color: C.success },

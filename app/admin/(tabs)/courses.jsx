@@ -9,7 +9,7 @@ import { adminDB } from '../../../src/db/database';
 
 const C = {
   bg: '#F8FAFC', card: '#FFFFFF', primary: '#1A56DB',
-  accent: '#F97316', success: '#16A34A', error: '#DC2626', warning: '#D97706',
+  accent: '#0F4D2E', success: '#16A34A', error: '#DC2626', warning: '#D97706',
   text: '#0F172A', muted: '#64748B', border: '#E2E8F0',
 };
 

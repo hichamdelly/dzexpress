@@ -3,15 +3,12 @@ import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../src/context/AppContext';
 import { useNotifications } from '../../src/hooks/useNotifications';
-import { useMessagesBadge } from '../../src/hooks/useMessagesBadge';
 import { NotifBanner } from '../../src/components/NotifBanner';
 
 export default function TabLayout() {
   const { user }                          = useApp();
   const router                            = useRouter();
-  const isT                               = user?.type === 'transporteur';
-  const { unread, banner, dismissBanner } = useNotifications(user?.id);
-  const msgUnread                         = useMessagesBadge(user?.id);
+  const { banner, dismissBanner }         = useNotifications(user?.id);
 
   const handleBannerPress = (notif: any) => {
     dismissBanner();
@@ -35,21 +32,23 @@ export default function TabLayout() {
           tabBarInactiveTintColor: '#9CA3AF',
           tabBarStyle: {
             backgroundColor: '#FFFFFF',
-            borderTopColor:  '#F3F4F6',
             borderTopWidth:  1,
-            height:          60,
-            paddingBottom:   8,
-            paddingTop:      6,
+            borderTopColor:  '#E5E7EB',
+            height:          80,
+            paddingBottom:   12,
+            paddingTop:      8,
+            elevation:       10,
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+          tabBarIconStyle:  { marginTop: 4 },
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
-            title: isT ? 'Disponibles' : 'Accueil',
+            title: 'Accueil',
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={isT ? 'search' : (focused ? 'home' : 'home-outline')} size={22} color={color} />
+              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
             ),
           }}
         />
@@ -57,40 +56,10 @@ export default function TabLayout() {
         <Tabs.Screen
           name="suivi"
           options={{
-            title: isT ? 'Mes courses' : 'Mes demandes',
+            title: 'Activité',
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={isT ? (focused ? 'car-sport' : 'car-sport-outline') : (focused ? 'list' : 'list-outline')} size={22} color={color} />
+              <Ionicons name={focused ? 'list' : 'list-outline'} size={22} color={color} />
             ),
-          }}
-        />
-
-        <Tabs.Screen
-          name="messages"
-          options={{
-            title: 'Messages',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={22} color={color} />
-            ),
-            tabBarBadge: msgUnread > 0 ? (msgUnread > 9 ? '9+' : msgUnread) : undefined,
-            tabBarBadgeStyle: {
-              backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
-              minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,
-            },
-          }}
-        />
-
-        <Tabs.Screen
-          name="notifications"
-          options={{
-            title: 'Alertes',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'notifications' : 'notifications-outline'} size={22} color={color} />
-            ),
-            tabBarBadge: unread > 0 ? (unread > 9 ? '9+' : unread) : undefined,
-            tabBarBadgeStyle: {
-              backgroundColor: '#EF4444', fontSize: 10, fontWeight: '700',
-              minWidth: 17, height: 17, borderRadius: 9, lineHeight: 17,
-            },
           }}
         />
 
@@ -99,12 +68,14 @@ export default function TabLayout() {
           options={{
             title: 'Profil',
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={24} color={color} />
+              <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
             ),
           }}
         />
 
         {/* Fichiers cachés */}
+        <Tabs.Screen name="messages"      options={{ href: null }} />
+        <Tabs.Screen name="notifications" options={{ href: null }} />
         <Tabs.Screen name="expediteur"   options={{ href: null }} />
         <Tabs.Screen name="transporteur" options={{ href: null }} />
         <Tabs.Screen name="connexion"    options={{ href: null }} />
